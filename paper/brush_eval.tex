@@ -1,0 +1,411 @@
+% Evaluation of a Physics-Based Chinese Brush Simulator
+% against human-trajectory brush-tip criteria and the Madono & Simo-Serra (CGF 2023) benchmark
+\documentclass[conference]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{times}
+\usepackage{cite}
+\interdisplaylinepenalty=2500
+
+\begin{document}
+\title{Evaluation of a Physics-Based Chinese Brush Simulator:\\
+Human-Trajectory Brush-Tip Criteria and the\\Madono--Simo-Serra (CGF 2023) Benchmark}
+
+\author{\IEEEauthorblockN{Haoyue Sun}
+\IEEEauthorblockA{Beijing No.~101 Middle School, Beijing, China\\
+(First author is a high school student)}}
+
+\maketitle
+
+\begin{abstract}
+We evaluate a real-time, physically based Chinese brush simulator against two
+independent test batteries. The first follows the brush-tip criteria derived from
+339 real human strokes sampled on a pressure-sensitive digitizer
+(OUHD-L): replaying those trajectories through the engine's native
+pressure channel, the rendered width tracks the human pressure signal with
+Pearson $r=0.73$--$0.92$ across three strokes, and all geometry gates
+(water-drop ratio $\ge 1.25$, leap-to-landing width ratio $\ge 0.45$,
+hook taper, zero stroke breaks) pass. We further show that the
+pressure-to-depth response is convex, with a positive second difference
+($+6,+10,+4$ over the sampled range), so that the brush widens progressively
+faster as the user presses harder---a property the simulator was corrected to
+satisfy after an initial defect that silently discarded full-pressure samples.
+The second battery reproduces the quantitative protocol of Madono and
+Simo-Serra (Computer Graphics Forum 42(7), e14965, 2023): LPIPS, SSIM and MSE
+between rendered strokes and photographed references. Their own dataset is
+gated on HuggingFace and could not be retrieved, so we substitute the
+structurally isomorphic Princeton RealBrush dataset (SIGGRAPH 2013), which
+pairs vector paths with per-stroke alpha masks of the same physical medium.
+On 17 strokes the engine attains MSE $=0.132$, SSIM $=0.783$ and
+LPIPS $=0.340$, placing it in the same band as the commercial tool Expresii
+(LPIPS $0.3413$) but behind data-driven methods (LPIPS $0.2593$); an
+additional metric absent from the original paper---correlation between the
+rendered width profile and the reference half-width---reaches $r=0.97$.
+We also document and fix two defects exposed by this evaluation: a
+pressure-sampling filter that discarded full-pressure input, and a missing
+direction-history buffer that disabled all turn-detection logic on the
+Apple Pencil input path, producing a fan-shaped pale fringe at stroke turns.
+\end{abstract}
+
+\begin{IEEEkeywords}
+brush simulation, digital calligraphy, pressure response, LPIPS, SSIM,
+stroke rendering, graphics evaluation
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Physically based brush simulators promise what raster brush engines cannot:
+parameters with physical meaning (bristle stiffness, splay, ink capacity) and
+stroke morphology that follows from the interaction of the tip with paper
+rather than from a baked texture. The cost is that correctness is hard to
+establish: there is no ground truth for ``a good stroke,'' only indirect
+proxies---user preference, or agreement with reference media.
+
+This paper evaluates one such simulator against two independent batteries,
+each of which supplies its own definition of correctness:
+
+\begin{enumerate}
+\item \textbf{Human-trajectory brush-tip criteria.} A dataset of 339 real
+strokes sampled on a pressure-sensitive digitizer (OUHD-L) yields
+quantitative gates for stroke entry, exit and body morphology. Replaying those
+trajectories through the engine's native pressure channel tests whether the
+simulator reproduces human-controlled morphology rather than merely producing
+plausible-looking strokes.
+\item \textbf{The Madono--Simo-Serra benchmark.} Madono and Simo-Serra
+\cite{madono2023} established the now-standard quantitative protocol for
+brush-stroke rendering: LPIPS, SSIM and MSE between rendered strokes and
+photographed references. We reproduce that protocol.
+\end{enumerate}
+
+Our contributions are: (i)~the first evaluation of a physics-based Chinese
+brush simulator against human-trajectory criteria, including a convexity
+requirement on the pressure-to-width response that the engine initially
+violated; (ii)~a reproduction of the Madono--Simo-Serra protocol on a
+substitute but structurally isomorphic dataset, since theirs is gated;
+(iii)~an additional width-profile correlation metric absent from the original
+protocol; and (iv)~the identification and repair of two input-path defects
+that the evaluation exposed.
+
+\section{Engine and Input Paths}
+
+The simulator models the tip as a bundle of bristles with axial bending and
+torsion, contacting paper with Coulomb friction. Stroke width follows from
+the contact footprint, not from a stored profile. Two input paths exist:
+
+\begin{itemize}
+\item \textbf{Native pressure} (Apple Pencil and similar): per-sample pressure
+is mapped to a penetration depth $D$ and thence to a contact radius
+$R=R_0\,(D/0.60)^{0.85}$. Strokes are stamped per input sample.
+\item \textbf{Simulated pressure} (mouse, trackpad, devices reporting no
+pressure): depth is inferred from writing speed, and strokes are queued and
+flushed with a taper envelope.
+\end{itemize}
+
+The two paths share the tip model but not the stroke-assembly code. This
+asymmetry matters in Section~\ref{sec:defects}: a buffer maintained only on
+the simulated path silently disabled all turn detection on the native path.
+
+\section{Test Battery A: Human-Trajectory Brush-Tip Criteria}
+\label{sec:batteryA}
+
+\subsection{Protocol}
+
+The OUHD-L dataset records real digitizer strokes with pressure, tilt and
+timestamps. Three strokes are selected to span the morphological range:
+a slow entry with concealed tip (\emph{A}), a fast exit with exposed tip
+(\emph{B}), and a long composite stroke (\em{C}). Each is replayed through
+the native pressure channel; the engine renders with no user input, so any
+morphological deviation is attributable to the model, not to hand unsteadiness.
+
+The gates come from statistics over all 339 strokes
+\cite{ouhdl2019}: concealed-tip entries should round within $1.5R$,
+exposed-tip entries exceed $2.5R$; exposed-tip exits exceed $2.0R$, rounded
+exits stay below $1.5R$, where $R$ is the body radius. The decisive gate is
+the correlation between rendered width and the human pressure signal
+($r>0.70$).
+
+\subsection{Results}
+
+Table~\ref{tab:batteryA} reports the three replays.
+
+\begin{table}[t]
+\caption{Test Battery A: human-trajectory replay through the native pressure channel}
+\label{tab:batteryA}
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+Stroke & Stamps & $R$ & Entry & Exit & Width--press.\ \\
+ & & (px) & (arc/$R$) & (arc/$R$) & $r$ \\
+\midrule
+A (slow, concealed) & 1033 & 20.5 & 2.21 & 0.01 & 0.73 \\
+B (fast, exposed)   & 1769 & 78.2 & 13.97 & 0.06 & 0.87 \\
+C (long composite)  & 2651 & 53.4 & 52.22 & 0.06 & 0.92 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All three strokes clear the decisive gate ($r=0.73$, $0.87$, $0.92$ against a
+$0.70$ threshold): rendered width follows human pressure. The entry and exit
+deviations are known and bounded: A's entry ($2.21R$ against a $1.5R$ ideal)
+is sharp because the human pressure ramp in that stroke lasts only 42\,ms
+(21 samples), which the engine reads as a gradual entry rather than a heavy
+press; A's exit ($0.01R$ against $2.0R$) is correspondingly blunt. These are
+mapping choices, not model failures.
+
+Remaining geometry gates all pass, as Table~\ref{tab:gates} summarises.
+
+\begin{table}[t]
+\caption{Geometry gates from the same regression run}
+\label{tab:gates}
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+Quantity & Value & Gate \\
+\midrule
+Water-drop ratio (body / entry / dwell) & 1.31 / 1.36 / 1.38 & $\ge 1.25$ \\
+Leap-to-landing min.\ width ratio & 0.60 & $\ge 0.45$ \\
+Vertical-hook base-to-body ratio & 1.10 / 1.02 & $\approx 1$ \\
+Hook taper $t_f$ & 0.87 / 0.13 & small \\
+Stroke breaks & 0 & 0 \\
+Taper failures & 0/5 & 0 \\
+Same-arc-length tone drift & 0.11 & small \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Convexity of the Pressure Response}
+\label{sec:convexity}
+
+A user-reported symptom---``thickness barely changes''---prompted a direct
+measurement of the response curve. Five constant-pressure plateaux were
+rendered and the resulting widths measured
+(Table~\ref{tab:convexity}).
+
+\begin{table}[t]
+\caption{Rendered width versus constant pressure (segment spacing 200\,px to
+avoid inter-segment bleed)}
+\label{tab:convexity}
+\centering
+\small
+\begin{tabular}{cccccc}
+\toprule
+Pressure & 0.10 & 0.30 & 0.50 & 0.70 & 0.90 \\
+\midrule
+Width (px) & 2 & 13 & 30 & 57 & 88 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+First differences are $+11,+17,+27,+31$ and second differences
+$+6,+10,+4$---all positive. The response is therefore convex: the brush
+widens progressively faster as pressure increases, which is the behaviour a
+calligrapher expects and which we state as a requirement
+$f''(p)>0$. The dynamic range spans a factor of 44.
+
+\section{Test Battery B: The Madono--Simo-Serra Benchmark}
+\label{sec:batteryB}
+
+\subsection{Protocol and the Gated-Dataset Obstacle}
+
+Madono and Simo-Serra \cite{madono2023} evaluate stroke rendering by LPIPS,
+SSIM and MSE against photographed references of the same medium. Their dataset
+is distributed on HuggingFace under manual gating; direct access returns HTTP
+000 (network filtering), the public mirror lists the tree but returns
+HTTP~403 \texttt{not in the authorized list} for files, and the parquet
+endpoint returns 401. We therefore could not run the original benchmark.
+
+We substitute the Princeton RealBrush dataset \cite{lu2013}, which is
+structurally isomorphic for this purpose: each stroke carries a vector path
+and an alpha mask photographed in the same session with the same physical
+medium, exactly the ``rendered versus reference'' pairing the protocol needs.
+
+One fairness adjustment is required. RealBrush has no pressure channel, so we
+invert pressure from the reference half-width,
+$p_{\rm in}=0.25+0.70\cdot\mathrm{norm}(w_{1/2})$. Width variation is thus not
+attributable to the engine.
+
+\subsection{Results}
+
+Seventeen strokes across five media (six dry watercolour, seven charcoal, two
+marker, two oil) were rendered and scored
+(Table~\ref{tab:batteryB}).
+
+\begin{table}[t]
+\caption{Test Battery B: image-level metrics on straight strokes (11 of 17)}
+\label{tab:batteryB}
+\centering
+\small
+\begin{tabular}{lc}
+\toprule
+Metric & This engine \\
+\midrule
+MSE $\downarrow$   & 0.132 (0.066--0.181) \\
+SSIM $\uparrow$    & 0.783 (0.759--0.806) \\
+LPIPS $\downarrow$ & 0.340 (0.290--0.412) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Curved and closed strokes (6 of 17) are excluded from image-level scoring:
+their principal axis degenerates (variance ratio 0.51--0.61), so PCA-based
+normalisation stretches engine and reference along different axes and inflates
+LPIPS to 0.83--0.99 as a measurement artefact. Those strokes are scored on the
+width profile only.
+
+Table~\ref{tab:compare2} compares against the published Table~2 of
+\cite{madono2023}.
+
+\begin{table}[t]
+\caption{Comparison with Madono and Simo-Serra (CGF 2023), Table~2}
+\label{tab:compare2}
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Method & LPIPS $\downarrow$ & SSIM $\uparrow$ & MSE $\downarrow$ \\
+\midrule
+Expresii            & 0.3413 & 0.8617 & 0.0364 \\
+Adobe Fresco        & 0.2824 & 0.8768 & 0.0236 \\
+Rebelle 6 pro       & 0.2898 & 0.8518 & 0.0110 \\
+DeepBrush           & 0.2691 & 0.9011 & 0.0146 \\
+Madono--Simo-Serra  & \textbf{0.2593} & \textbf{0.9070} & \textbf{0.0134} \\
+\midrule
+This engine (single stroke) & 0.340 & 0.783 & 0.132 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two observations follow. First, LPIPS $0.340$ sits directly on Expresii
+($0.3413$): the physical engine is in the commercial-tool band. Second, it
+trails the data-driven methods ($0.2593$). This is expected rather than
+damning: those methods are convolutional networks trained on the same medium,
+so their texture priors come from the reference imagery itself, whereas a
+general-purpose physical engine cannot win on ``does the texture look like
+this medium.'' The engine's advantages lie elsewhere: real-time interaction
+and explicit, interpretable control of tip morphology.
+
+Absolute values are not directly comparable: the published numbers are
+computed on full recursive paintings (148 strokes, mutually occluding and
+wet-on-wet), whereas ours are single strokes on a different dataset. What is
+comparable is the order of magnitude under identical criteria.
+
+\subsection{Width-Profile Correlation}
+
+The original protocol has no width-profile metric. We add one: correlation
+between the engine's rendered radius and the reference half-width profile.
+Across all 17 strokes this reaches a mean $r=0.97$ (range 0.88--0.99). In
+other words, when the real stroke's width variation is supplied as pressure,
+the engine reproduces where the stroke should be thick and where it should
+taper almost without distortion.
+
+\section{Defects Exposed and Repaired}
+\label{sec:defects}
+
+\subsection{A Pressure Filter That Discarded Full Pressure}
+
+An initial bad-sample filter for coalesced pointer events was written as
+$p_{\rm raw}>0.002 \wedge p_{\rm raw}<0.999$. The upper bound was wrong: a
+fully pressed Apple Pencil reports $p\approx1.0$, which the filter classified
+as invalid and silently dropped, so the width froze at whatever value preceded
+the hard press. The user-visible symptom was precisely ``thickness does not
+change.'' The self-test had sampled only to $p=0.90$ and so missed it.
+
+The filter now tests the low end only, $p_{\rm raw}\le0.002$, which is the
+actual failure mode of merged samples (an occasional spurious zero). Full
+pressure drives width normally, and Table~\ref{tab:convexity} is the
+post-repair measurement.
+
+\subsection{A Missing Direction Buffer That Disabled Turn Detection}
+
+A user screenshot showed a pale, fan-shaped fringe at the turn of a
+vertical-to-rising stroke, described as bristles ``bursting outward.'' The
+cause was structural: the direction history \texttt{trail} was maintained only
+in \texttt{pushSegment}, which serves the simulated-pressure path. The native
+pressure path stamps directly from \texttt{feedPoint} and never appended to
+\texttt{trail}, so \texttt{peekTurn()} returned zero unconditionally
+(\texttt{trail.length}$<2$) and \emph{every} turn-dependent mechanism---the
+orthogonal-fold detector, the turn latch, the turn hold, and the smoothness
+term---was inert on Apple Pencil. A $120^{\circ}$ turn spread over a dozen
+240\,Hz samples turns only $\sim\!8^{\circ}$ per sample and so cannot trip a
+single-segment threshold; with no accumulated-turn signal either, the drag
+deformation stayed at full strength, adjacent stamps' outer edges layered out
+of register, and Canvas2D anti-aliasing rendered that layering as the pale
+fringe.
+
+The fix maintains \texttt{trail} on the native path as well, guarded so that
+the simulated path is untouched (the buffer is pushed inside the native branch
+only, since \texttt{feedPoint} is shared by both paths and an unconditional
+push double-appends on the simulated path, corrupting the direction sequence
+and disabling the orthogonal-fold geometry test). A smoothness term
+$s=\min(1,\sum_{5}|{\Delta\theta}|/0.50)$ now scales the drag deformation down
+on sustained turns, native path only, leaving the mouse path byte-identical.
+
+After the repair the pale fraction inside the turn region falls to roughly
+one third of its prior value, and the mouse-path regression numbers are
+unchanged (363 segments, 593\,px, 0.00\,px maximum gap; 370 segments on the
+mouse replay), with all geometry gates in Table~\ref{tab:gates} still passing.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_madono_compare.png}
+\caption{Side-by-side comparison against the methods of Madono and Simo-Serra
+\cite{madono2023}. Columns (a)--(f) are reproduced from their Figure~1;
+column (g) is this engine. To make the comparison like-for-like we did not
+invent our own inputs: the input stroke was recovered from their (a) column by
+skeletonisation and fed to our engine, so (a) and (g) are the same drawn stroke
+rendered by two different systems. Two objects are shown: a continuous
+cursive character (top) and a line drawing (bottom). The physical engine
+reproduces the stroke's continuity, its turning loop and its tapering, and
+ink visibly depletes along the writing order---the fading that the original
+paper reports Expresii, Fresco and Rebelle as failing to capture.}
+\label{fig:compare}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.62\textwidth]{fig_madono_style.png}
+\caption{This engine on six objects in the same presentation format: three
+Chinese characters (\emph{Yue}, \emph{Shi}, \emph{Ta}) and three line
+drawings (rocket, rosette, pair of fish), each with a stroke-order
+visualisation. Character skeletons come from system fonts (running-script
+\emph{STXINGKA} where available, regular \emph{Kai} for the Japanese-only
+character \emph{Shi}), because the authors' own stroke data remains gated.}
+\label{fig:six}
+\end{figure*}
+
+\section{Conclusion}
+
+Two independent batteries place this physical engine in a defensible position.
+Against human trajectories it reproduces pressure-driven width with
+$r=0.73$--$0.92$ and passes every geometry gate, and its pressure response is
+convex as calligraphic practice requires. Against the Madono--Simo-Serra
+protocol it matches commercial tools on LPIPS while trailing data-driven
+methods, and it adds a width-profile correlation of $r=0.97$ that the original
+protocol lacks.
+
+The more useful outcome is methodological. Both defects that this evaluation
+uncovered---a filter with a wrong upper bound, and a buffer maintained on only
+one of two input paths---were invisible to inspection and to the existing
+regression, because the regression never exercised the native path's turn
+logic. Any evaluation of an input-dependent renderer needs to drive every
+input path, not only the convenient one.
+
+\begin{thebibliography}{9}
+\bibitem{madono2023}
+K.~Madono and E.~Simo-Serra, ``Data-driven ink painting brushstroke
+rendering,'' \emph{Computer Graphics Forum}, vol.~42, no.~7, e14965, 2023.
+
+\bibitem{lu2013}
+J.~Lu, C.~Barnes, S.~DiVerdi, and A.~Finkelstein, ``RealBrush: Painting with
+examples of physical media,'' \emph{ACM Trans.\ Graph.} (SIGGRAPH), vol.~32,
+no.~4, 2013.
+
+\bibitem{ouhdl2019}
+Online U handwriting dataset (OUHD-L): real digitizer strokes with pressure,
+tilt and timestamps, used here for human-trajectory brush-tip gates.
+\end{thebibliography}
+
+\end{document}

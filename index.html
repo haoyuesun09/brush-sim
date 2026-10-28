@@ -1,0 +1,3498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>锋毫 · 毛笔笔尖物理仿真台</title>
+<style>
+:root{
+  --paper:#F7F4EC; --surface:#FFFDF8; --bg:#EDE9E0;
+  --ink:#1B1814; --ink-2:#4A443C; --muted:#8A8377;
+  --line:rgba(27,24,20,.13); --line-2:rgba(27,24,20,.26);
+  --zhu:#A8342A; --zhu-w:#EFD8D3; --qing:#2A6076; --qing-w:#DAE6EB;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --kai:"KaiTi","STKaiti","Kaiti SC","Songti SC",serif;
+  --mono:"IBM Plex Mono","Consolas","SF Mono",monospace;
+  --r-sm:6px; --r-md:10px; --r-lg:16px;
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:13px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.grain{position:fixed;inset:0;pointer-events:none;z-index:9;opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+h1,h2,h3{margin:0;font-weight:500}
+button{font-family:inherit;font-size:12px;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line-2);border-radius:var(--r-sm);padding:7px 12px;cursor:pointer;
+  transition:background .16s ease-out,transform .16s ease-out}
+button:hover{background:#fff;border-color:var(--ink-2)}
+button:active{transform:translateY(1px)}
+button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--zhu);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button:disabled{opacity:.4;cursor:not-allowed}
+
+/* ---- 顶栏 ---- */
+.bar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:14px 22px;background:var(--surface);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:14px}
+.seal{width:44px;height:44px;flex:none;border-radius:5px;background:var(--zhu);color:#fff;
+  font-family:var(--kai);font-size:26px;display:flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.bar h1{font-family:var(--kai);font-size:20px;letter-spacing:.02em}
+.ver{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:99px;
+  font-family:var(--mono);font-size:11px;color:var(--muted);
+  border:1px solid var(--line-2);vertical-align:2px}
+.bar p{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.bar-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---- 主布局 ---- */
+main{display:grid;grid-template-columns:minmax(0,1fr) 336px;gap:16px;padding:16px;align-items:start}
+.stage{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg)}
+
+.paper-wrap{position:relative;margin:0;padding:10px}
+/* touch-action:none 已有 —— 它阻止 Safari 把手势判成滚动/缩放（否则 pointermove 会被吞，
+   只剩零星几点）。下面两条针对 iOS 长按：不禁用会弹出「复制/选择」菜单并中断笔画。 */
+#paper{display:block;width:100%;border-radius:var(--r-md);cursor:crosshair;touch-action:none;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  box-shadow:0 1px 0 rgba(27,24,20,.06),0 8px 24px -12px rgba(27,24,20,.28)}
+.paper-hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-family:var(--kai);font-size:17px;color:rgba(27,24,20,.22);pointer-events:none;letter-spacing:.1em}
+.paper-hint[hidden]{display:none}
+.footnote{margin:8px 2px 0;font-size:11.5px;color:var(--muted)}
+/* §7 校准面板的状态条与读数行 */
+.cal-status{margin:8px 0 6px;padding:7px 10px;border-radius:6px;background:rgba(27,24,20,.045);
+            font-size:11.5px;line-height:1.5;border-left:3px solid var(--zhu)}
+.cal-status .ok{color:var(--ink-2)}
+.cal-status .warn{color:var(--zhu);font-weight:600}
+.cal-status.shake{animation:shake .32s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.cal-read{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+          font-size:11.5px;color:var(--muted);border-top:1px dashed var(--line);padding-top:7px;margin-top:2px}
+.cal-read b{font-family:var(--mono);font-weight:500;color:var(--ink);font-size:11px;text-align:right}
+.demo-grid button.skip{cursor:not-allowed}
+
+.instruments{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:16px}
+.inst{padding:12px 14px 14px}
+.inst h2{font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:400;margin-bottom:8px}
+.inst canvas{display:block;width:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin:8px 0 0;padding:0;list-style:none;font-size:11.5px;color:var(--muted)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.tabs{display:flex;gap:6px;margin-bottom:8px}
+.tabs button{padding:5px 10px;font-size:11.5px}
+
+/* ---- 侧栏控制台 ---- */
+.console{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{padding:14px}
+.card > h2{font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:400;margin-bottom:10px}
+
+.mats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mat{text-align:left;padding:9px 10px;line-height:1.35}
+.mat b{font-family:var(--kai);font-size:15px;font-weight:400;display:block}
+.mat s{display:block;text-decoration:none;font-size:10.5px;color:var(--muted);margin-top:2px}
+.mat[aria-pressed="true"] b{color:var(--paper)}
+.mat[aria-pressed="true"] s{color:rgba(247,244,236,.6)}
+
+.row{margin-bottom:11px}
+.row select{padding:5px 8px;border:1px solid #d8cfc0;border-radius:6px;background:#fffdf8;font-size:12px;color:#3a342b;width:100%;cursor:pointer}
+.row:last-child{margin-bottom:0}
+.row label{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);margin-bottom:3px}
+.row output{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--zhu);height:20px;margin:0}
+.switch{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);margin:2px 0 10px}
+.switch input{width:15px;height:15px;accent-color:var(--zhu)}
+
+.hero{border-radius:var(--r-md);background:#F4F0E7;padding:12px 14px;border:1px solid var(--line)}
+.hero-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.hero-top span{font-size:11.5px;color:var(--muted)}
+.hero-num{font-family:var(--mono);font-size:34px;font-variant-numeric:tabular-nums;line-height:1.1;letter-spacing:-.02em}
+.hero-num small{font-size:12px;color:var(--muted);letter-spacing:0;margin-left:3px}
+.stack{display:flex;height:9px;border-radius:5px;overflow:hidden;background:rgba(27,24,20,.07);margin-top:9px}
+.stack i{display:block;height:100%;transition:width .12s linear}
+.stack .e{background:var(--qing)} .stack .f{background:var(--zhu)}
+
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.metric{background:#F7F4EC;border-radius:var(--r-sm);padding:7px 9px}
+.metric span{display:block;font-size:10.5px;color:var(--muted);white-space:nowrap}
+.metric b{display:block;font-family:var(--mono);font-size:15px;font-weight:400;font-variant-numeric:tabular-nums;margin-top:1px}
+
+.cmp{display:grid;grid-template-columns:1fr;gap:9px}
+.cmp h3{font-size:11.5px;color:var(--muted);font-weight:400;margin-bottom:5px}
+.crow{display:grid;grid-template-columns:42px minmax(0,1fr) 38px;align-items:center;gap:7px;margin-bottom:4px;font-size:11.5px}
+.crow .track{height:7px;border-radius:4px;background:rgba(27,24,20,.07);overflow:hidden}
+.crow .fill{display:block;height:100%;transition:width .25s var(--ease)}
+.crow em{font-style:normal;font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+
+table.stats{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed}
+table.stats th{font-weight:400;color:var(--muted);text-align:right;padding:3px 0;border-bottom:1px solid var(--line)}
+table.stats th:first-child,table.stats td:first-child{text-align:left}
+table.stats td{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;padding:3px 0;color:var(--ink-2)}
+.empty{font-size:11.5px;color:var(--muted);padding:6px 0}
+
+.demo-grid{display:grid;gap:6px}
+.demo-grid button{text-align:left;padding:9px 11px}
+.demo-grid b{font-family:var(--kai);font-size:14px;font-weight:400;display:block}
+.demo-grid s{display:block;text-decoration:none;font-size:10.5px;color:var(--muted);margin-top:1px}
+
+@media (max-width:1120px){
+  main{grid-template-columns:minmax(0,1fr)}
+  .console{order:2}
+  .instruments{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:640px){
+  .bar{flex-direction:column;align-items:flex-start}
+  .mat{grid-template-columns:1fr}
+  .mats{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="bar">
+  <div class="brand">
+    <div class="seal" aria-hidden="true">锋</div>
+    <div>
+      <h1>锋毫 · 毛笔笔尖物理仿真台<span class="ver">v4.3</span></h1>
+      <p>逐毛黏滑摩擦｜迟滞回环｜笔尖结构 × 书写角度 × 笔的材质</p>
+    </div>
+  </div>
+  <div class="bar-actions">
+    <button id="btn-dip" title="重新吸墨（快捷键：空格）">蘸墨</button>
+    <button id="btn-clear" title="清空纸面与曲线">清空</button>
+  </div>
+</header>
+
+<main>
+  <section class="stage">
+    <figure class="panel paper-wrap">
+      <canvas id="paper" role="img" aria-label="宣纸书写区，可按住拖动书写"></canvas>
+      <p class="paper-hint" id="hint">在此按住拖动即可书写</p>
+      <figcaption class="footnote">
+        <b>默认中锋</b>（θ=0，笔杆近竖直）→ 点按就是正圆。一旦不抬笔拖起来：
+        毛被纸摩擦拖住、向后倒伏，<b>前缘被压住铺不开、后缘被拖着拉长、侧向收窄</b>，
+        于是落纸截面不再是圆，而是沿行笔方向拉长的后曳形（见「笔尖状态」顶视，或看右侧「拖曳形变」读数）。
+        <b>Apple Pencil 初触只留极小墨点，轻触缓慢铺锋，重按逐渐铺毫；笔迹连续衔接，无浅色墨圈。</b>
+        接数位板 / Apple Pencil 后倾角由笔杆传感器自动进给，θ 越大截面越扁长且偏向压得最深的一侧（侧锋）；
+        鼠标与触控板没有倾角数据，恒按中锋。无压感设备时用行笔速度推断提按 → 疾扫越扫越细。
+        <b>纸张生熟度</b>改变洇墨、边缘毛糙、耗墨速度与纸面涩度。
+        <b>颜色约定</b>：纸面只有中性墨色；朱砂只表示摩擦 / 滑移量，不参与墨迹。
+      </figcaption>
+    </figure>
+
+    <div class="instruments">
+      <div class="panel inst">
+        <h2>笔尖状态</h2>
+        <canvas id="tip" role="img" aria-label="笔尖顶视图与侧视图"></canvas>
+        <ul class="legend" id="layer-legend"></ul>
+        <p class="footnote">
+          圆点<b>填充色 = 毛料</b>（笔柱心毫 / 外圈被毫），<b>描边色 = 接触状态</b>：
+          深描边=黏着（弹性反抗），<b>朱砂描边=滑移（摩擦封顶）</b>，淡描边=未触纸。
+          朱砂只出现在这个面板，纸面上的墨迹不含任何红色。
+        </p>
+      </div>
+      <div class="panel inst">
+        <div class="tabs">
+          <button data-tab="tor" aria-pressed="true">转锋：阻力–转角</button>
+          <button data-tab="press" aria-pressed="false">提按：压力–压深</button>
+        </div>
+        <canvas id="chart" role="img" aria-label="扭矩或压力随输入变化的迟滞回环"></canvas>
+        <p class="footnote" id="chart-note">回环所围面积 = 一次往复耗散的能量 = 手感上的「阻力 / 黏滞」。</p>
+      </div>
+    </div>
+  </section>
+
+  <aside class="console">
+    <div class="panel card">
+      <h2>笔的材质</h2>
+      <div class="mats" id="mats"></div>
+    </div>
+
+    <div class="panel card">
+      <h2>纸张生熟度</h2>
+      <div class="mats" id="papers"></div>
+      <p class="footnote">
+        生宣未加胶矾、纤维疏松 → 吃墨猛、洇得开、边缘毛、纸面涩（转锋阻力也更大）；
+        熟宣加过胶矾 → 几乎不洇、边缘锋利、墨浮在表面、纸面滑；半生熟居中。
+      </p>
+    </div>
+
+    <div class="panel card">
+      <h2>书写姿态</h2>
+      <div class="row">
+        <label>笔迹算法引擎</label>
+        <select id="c-engine">
+          <option value="physics" selected>自研物理（笔毛仿真）</option>
+          <option value="procreate">Procreate（Touch Taper + StreamLine）</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>压深 d <output id="o-d">0.34</output></label>
+        <input type="range" id="s-d" min="0" max="1.2" step="0.01" value="0.34">
+      </div>
+      <div class="row">
+        <label>笔杆倾角 θ <output id="o-th">0°</output></label>
+        <input type="range" id="s-th" min="0" max="70" step="1" value="0">
+      </div>
+      <div class="row">
+        <label>方位角 ψ <output id="o-ps">-45°</output></label>
+        <input type="range" id="s-ps" min="-180" max="180" step="1" value="-45">
+      </div>
+      <div class="switch"><input type="checkbox" id="c-tilt" checked><label for="c-tilt">倾角取自笔杆传感器（数位板 / Apple Pencil 的 tilt；鼠标与触控板恒为中锋 θ=0）</label></div>
+      <div class="switch"><input type="checkbox" id="c-press"><label for="c-press">笔压驱动压深（检测到压感笔自动开启）</label></div>
+      <div class="row"><label>输入通路 <output id="o-path">模拟提按（速度推断）</output></label></div>
+      <div class="switch"><input type="checkbox" id="c-speed" checked><label for="c-speed">疾扫自动提笔（无压感设备时用速度推断提按 → 快扫越扫越细）</label></div>
+      <div class="switch"><input type="checkbox" id="c-lift" checked><label for="c-lift">停笔自动收锋（鼠标无法「渐提」，停笔 0.28 s 即沿行进方向出锋离纸）</label></div>
+      <div class="row">
+        <label>疾扫提笔强度 <output id="o-sl">100%</output></label>
+        <input type="range" id="s-sl" min="0" max="1.6" step="0.05" value="1">
+      </div>
+      <div class="row">
+        <label>转锋 φ <output id="o-ph">0°</output></label>
+        <input type="range" id="s-ph" min="-90" max="90" step="1" value="0">
+      </div>
+      <div class="switch"><input type="checkbox" id="c-auto"><label for="c-auto">自动转锋往复（画迟滞回环 · 演示用）</label></div>
+      <div class="row">
+        <label>转锋幅度 <output id="o-pa">45°</output></label>
+        <input type="range" id="s-pa" min="10" max="90" step="1" value="45">
+      </div>
+      <div class="row">
+        <label>转锋频率 <output id="o-pf">0.55 Hz</output></label>
+        <input type="range" id="s-pf" min="0.1" max="1.4" step="0.05" value="0.55">
+      </div>
+    </div>
+
+    <div class="panel card">
+      <h2>纸与墨</h2>
+      <div class="row">
+        <label>墨量 <output id="o-ink">100%</output></label>
+        <input type="range" id="s-ink" min="0" max="1" step="0.01" value="1">
+      </div>
+      <div class="row">
+        <label>洇墨倍率 <output id="o-ab">0%</output></label>
+        <input type="range" id="s-ab" min="0" max="1" step="0.01" value="0">
+      </div>
+      <div class="row">
+        <label>收笔锥长 <output id="o-tp">34px</output></label>
+        <input type="range" id="s-taper" min="4" max="80" step="2" value="34">
+      </div>
+      <div class="row">
+        <label>流线 <output id="o-st">35%</output></label>
+        <input type="range" id="s-stream" min="0" max="0.9" step="0.05" value="0.35">
+      </div>
+      <div class="row">
+        <label>抖振死区 <output id="o-mf">1.6px</output></label>
+        <input type="range" id="s-mf" min="0" max="4" step="0.2" value="1.6">
+      </div>
+    </div>
+
+    <div class="panel card">
+      <h2>实时读数</h2>
+      <div class="hero">
+        <div class="hero-top"><span>当前阻力指数（笔杆处感受到的抵抗扭矩）</span></div>
+        <div class="hero-num"><span id="o-R">0</span><small>a.u.</small></div>
+        <div class="stack" title="石青=弹性反抗，朱砂=摩擦封顶">
+          <i class="e" id="bar-e" style="width:0%"></i><i class="f" id="bar-f" style="width:0%"></i>
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><span>法向压力 N</span><b id="o-P">0</b></div>
+        <div class="metric"><span>接触毛 / 总毛</span><b id="o-N">0/56</b></div>
+        <div class="metric"><span>弹性扭矩 Tₑ</span><b id="o-Te">0</b></div>
+        <div class="metric"><span>摩擦扭矩 T_f</span><b id="o-Tf">0</b></div>
+        <div class="metric"><span>滑移毛占比</span><b id="o-S">0%</b></div>
+        <div class="metric"><span>平均滞后角</span><b id="o-L">0°</b></div>
+        <div class="metric"><span>单次回锋耗散</span><b id="o-E">0</b></div>
+        <div class="metric"><span>接触状态</span><b id="o-ST">离纸</b></div>
+        <div class="metric"><span>笔法</span><b id="o-FA">中锋</b></div>
+        <div class="metric"><span>疾扫提笔</span><b id="o-SL">0%</b></div>
+        <div class="metric"><span>实际压深 / 设定</span><b id="o-DE">0.34</b></div>
+        <div class="metric"><span>倾角来源</span><b id="o-TS">中锋默认</b></div>
+        <div class="metric"><span>转折预判</span><b id="o-TK">直行</b></div>
+        <div class="metric"><span>拖曳形变 前/后缘</span><b id="o-DR">1.00</b></div>
+        <div class="metric"><span>纸面涩度 μ</span><b id="o-MU">×1.00</b></div>
+      </div>
+      <p class="footnote">单位 a.u.（归一化，可标定到 mN·m）。</p>
+    </div>
+
+    <div class="panel card">
+      <h2>材质对比（按当前压深 / 倾角实算）</h2>
+      <div class="cmp">
+        <div>
+          <h3>饱和阻力峰值 — 正比于 μ·N，硬毫更「顶手」</h3>
+          <div id="cmp-peak"></div>
+        </div>
+        <div>
+          <h3>平均滑移滞后角 — 毛被拧到多大角才打滑，软毫更「黏滞、松得慢」</h3>
+          <div id="cmp-lag"></div>
+        </div>
+      </div>
+      <p class="footnote">
+        两者趋势相反：<b>阻力峰值 ∝ μ·EI</b>（毛越硬、压出来的法向力越大）；<b>滞后角 ∝ μ·N / 抗扭刚度</b>。
+        所以「硬毫顶手但干脆，软毫轻手但黏滞」是同一套参数的两种表现。
+      </p>
+    </div>
+
+    <div class="panel card">
+      <h2>个性化校准 · 让提按学会你的手</h2>
+      <p class="footnote" style="margin-top:-4px">
+        每个人「哪里快、哪里慢」的节奏不同，通用阈值必然失配。写下六笔标准笔画，
+        引擎会拟合出<b>你自己的</b>「速度 → 提按」映射 —— <b>保留你的节奏，只改写映射</b>，
+        所以校准后你不会觉得被机器拉着写。
+      </p>
+      <div class="demo-grid">
+        <button id="btn-cal"><b>开始校准（六笔）</b><s>横 · 竖 · 点 · 撇 · 捺 · 竖钩</s></button>
+        <button id="btn-cal-clear"><b>恢复通用映射</b><s>清掉个人参数回到出厂值</s></button>
+      </div>
+      <div class="cal-status" id="cal-status"><span class="ok">未校准。用鼠标/触控板时尤其建议校准一次。</span></div>
+      <div class="cal-read"><span>当前映射</span><b id="read-cal">未校准（通用阈值 V₁×1.00 · L×1.00）</b></div>
+      <p class="footnote">
+        写完的颜色深浅取决于<b>压深</b>，笔画粗细取决于<b>接触面几何</b> —— 两者独立（§6 浓度 ⊥ 墨量）。
+        六笔都会自动清空重来，中途作废会提示重写。
+      </p>
+    </div>
+
+    <div class="panel card">
+      <h2>演示</h2>
+      <div class="demo-grid">
+        <button data-demo="zhe"><b>折锋 · 横折钩</b><s>顿笔硬折 + 衄挫转锋 + 趯锋出笔</s></button>
+        <button data-demo="zhuan"><b>转锋 · 圆转</b><s>中锋不提起，连续绕轴自转 58°</s></button>
+        <button data-demo="compare"><b>折锋对比 · 按笔 vs 提笔</b><s>同一转角两种技法，峰值阻力差一个数量级</s></button>
+      </div>
+      <p class="footnote" id="demo-note">
+        演示会驱动左侧滑杆，可直接看到压深与转锋角如何变成阻力。跑完看下方「逐笔记录」的峰值与耗散对比。
+      </p>
+    </div>
+
+    <div class="panel card">
+      <h2>逐笔记录</h2>
+      <div id="stats-wrap"><p class="empty">还没有笔画。写一笔或跑一次演示，这里会记录峰值阻力与耗散能量。</p></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+(function(){
+'use strict';
+
+/* =========================================================
+   1. 材质参数
+   EI     单根毛的弯曲刚度（软硬的核心）
+   kTor   毛束绕轴抗扭系数
+   mu     毛–纸摩擦系数（软毛贴合度高 → μ 大）
+   ink    蓄墨能力
+   splay  落纸铺开半径（散锋程度）
+   hys    提按的加载/卸载不对称度
+   ========================================================= */
+const MATS = {
+  yang:{name:'羊毫',tag:'全羊毫 · 软 · 蓄墨最多',  EI:0.36,kTor:0.30,mu:0.80,ink:1.00,splay:1.22,hys:0.86,layers:['yang','yang']},
+  jian:{name:'兼毫',tag:'心毫狼毫 + 被毫羊毫',      EI:0.46,kTor:0.42,mu:0.66,ink:0.82,splay:1.06,hys:0.56,layers:['lang','yang']},
+  lang:{name:'狼毫',tag:'全狼毫 · 硬 · 弹性好',    EI:0.85,kTor:0.78,mu:0.55,ink:0.62,splay:0.92,hys:0.34,layers:['lang','lang']},
+  zi:  {name:'紫毫',tag:'全紫毫 · 最硬 · 蓄墨少',  EI:1.00,kTor:0.96,mu:0.47,ink:0.50,splay:0.84,hys:0.20,layers:['zi','zi']}
+};
+const KT = 45;      // 扭转刚度标定
+const FR = 38;      // 摩擦扭矩标定
+const PACK = 0.35;  // 毛间挤压刚度：毛束的集体抗扭下限，与单根毛的软硬解耦
+const TS = 0.5;     // 扭矩显示缩放
+const PS = 40;      // 压力显示缩放
+const LIFT = 0.34;  // 提笔回弹时长（秒）
+const TOUCH = 0.30; // 落笔渐入的时间兜底窗（秒）。原为 0.12s 的纯时间渐变 —— 会随速度漂移：
+                    // 快起笔 0.12s 已走出 40px+（入口一片淡），慢起笔只走 6px（入口一下就黑），
+                    // 同一支笔同一个起笔形态的浓淡却由行笔速度决定。现改为**弧长为主**（TOUCH_L），
+                    // 本常量只兜底「落笔后原地顿住」（弧长不走）的情况。
+const TOUCH_L0 = 16; // 起笔渐入的弧长预算基准（px，按笔宽缩放，见 stroke 起点的 S.touchL）
+const MF_DZ0 = 1.6;  // Motion Filtering 垂直残差死区（px）：只删侧向抖振，不删沿行笔方向的位移
+const REF = 720;    // 参考画布宽度，用于笔尖半径缩放
+const SPD0 = 0.22;  // 疾扫提笔起效速度（×画布宽 / 秒）
+const SPD1 = 1.30;  // 疾扫提笔到达满值的速度
+const LIFTMAX = 0.40; // 满提笔时压深保留比例（0.40 → 快扫最多细约 34%）
+                      // 原来 0.86 = 快扫时宽度只剩 19%，与慢速段差 5 倍 —— 书写者每次
+                      // 控制转向都会减速，于是每个转折处鼓出一坨（用户截图里的鼓包）。
+const DRAGV  = 0.95;  // 拖曳形变到达满值的速度（×画布宽 / 秒）—— 1.55→0.95：正常行笔 300~600px/s
+                      //  就能出 ~0.3~0.6 的水滴，原来要到 1000px/s 才有感（用户：「行笔时水滴型才符合现实」）
+const DRAG_MAX = 0.92; // 满拖曳时前缘压缩 42%、后缘拉伸 87%、侧向收窄 20%
+const CORE_R = 0.45;   // 笔柱（心毫）与被毫的分界半径：r ≤ 0.45 为笔柱
+
+/* =========================================================
+   1a. 毛料（一种毛一种物性）
+   兼毫不是「一个中间值的毛」，而是**两种毛拼起来**：
+     心毫（笔柱，内圈）用硬毫成锋、被毫（外圈）用软毫蓄墨铺毫。
+   所以 EI / 蓄墨能力必须按毛料给，而不是按笔给。
+   ========================================================= */
+const HAIR = {
+  yang:{name:'羊毫', EI:0.36, cap:1.28, tint:'#2F6A86', tintOff:'#9FBECB'},  // 软、蓄墨最多
+  lang:{name:'狼毫', EI:0.85, cap:0.66, tint:'#8A5A2B', tintOff:'#CBB79B'},  // 硬、蓄墨少
+  zi:  {name:'紫毫', EI:1.00, cap:0.52, tint:'#5E3D72', tintOff:'#B9AAC6'}   // 最硬、最不蓄墨
+};
+
+/* =========================================================
+   1b. 纸张生熟度
+   生宣：未加胶矾，纤维疏松吸水猛 → 洇墨大、边缘毛糙、墨走得快（易飞白）、纸面涩（μ 大）
+   熟宣：加过胶矾，几乎不吸水 → 不洇、边缘锋利、墨浮在表面、纸面滑（μ 小）
+   半生熟：两者之间
+   这些量分别接到：湿晕强度/半径、轮廓噪声、耗墨速率、毛–纸摩擦、洇墨扩散
+   ========================================================= */
+/* 纸张生熟度 —— 生/半生熟/熟三者的「相对序关系」必须保持
+   （这是 §7 标定验证过的），只是把绝对值整体往「收敛」方向压：
+   用户反馈「洇得太夸张、也没那么晕」,故 halo / bleed / spread 全部下调。
+   halo   → 湿晕浓度（视觉上一次「灰圈」的深浅）
+   bleed  → 驻笔洇墨的外扩半径倍率
+   spread → 湿晕圈相对笔画本体的尺度倍率
+   edge   → 边缘毛糙（保留原值：这不是洇染，是纸面的涩手感，用户没抱怨）
+   drain  → 耗墨速度（保留：影响飞白节奏，不动）
+   mu     → 涩度（保留：影响手感，不动） */
+const PAPERS = {
+  raw:  { name:'生宣',   tag:'洇墨大 · 边缘毛 · 涩', halo:1.10, spread:1.20, edge:1.55, drain:1.75, mu:1.28, bleed:1.05 },
+  half: { name:'半生熟', tag:'中 · 略有洇',          halo:0.80, spread:1.00, edge:1.00, drain:1.00, mu:1.00, bleed:0.78 },
+  sized:{ name:'熟宣',   tag:'不洇 · 边缘利 · 滑',    halo:0.22, spread:0.72, edge:0.28, drain:0.55, mu:0.72, bleed:0.22 }
+};
+
+/* =========================================================
+   2. 刷毛排布（同心环 + 锥度 + 参差抖动）
+   环半径取 r=√(k/K) → 面密度近似均匀（内圈稀、外圈密，与真实笔尖一致），
+   单环毛数 ∝ r。共 274 根 —— 原来 56 根太稀：飞白丝缕、边缘毛糙、
+   以及「拖动时截面被拖成非圆」都表现不出来。
+   中心长、外圈短 → 低压只有「锋」触纸（尖锋），高压外圈陆续落纸（铺毫）。
+   ========================================================= */
+/* =========================================================
+   2. 刷毛排布（把截面铺满，中心不留空洞）
+   之前用 r=√(k/K) 取环半径 —— 那是「每个环带面积相等」，但环间距外密内疏，
+   最内圈半径直接跳到 0.33，中间只放 1 根毛 → 顶视看去中间一个大空洞。
+   现在改成**径向等距 + 环上毛数 ∝ r**：
+       r_k = k/K（径向间距 = 1/K，均匀）
+       n_k = 2πr_k/(1/K)（角向间距 = 径向间距 → 面内近似各向同性堆积）
+   这样整根笔尖从芯到边都是毛，密度均匀，且外圈自然更密。
+   中心长、外圈短 → 低压只有「锋」触纸（尖锋），高压外圈陆续落纸（铺毫）。
+   ========================================================= */
+const NRING = 10;
+const RINGS = [];
+for(let k=1;k<=NRING;k++){
+  const r = k/NRING;
+  RINGS.push([r, Math.max(3, Math.round(2*Math.PI*r*NRING))]);
+}
+let _seed = 20260920;
+function rnd(){ _seed = (_seed*1664525 + 1013904223) >>> 0; return _seed/4294967296; }
+const B = [];
+RINGS.forEach(function(ring){
+  const rr = ring[0], n = ring[1];
+  for(let i=0;i<n;i++){
+    const ja = (rnd()-0.5)*(Math.PI/n)*0.9;      // 角向抖动 < 半个格 → 不破坏堆积
+    const jr = (rnd()-0.5)*(1/NRING)*0.45;       // 径向抖动 < 半个环距
+    const r  = Math.min(1, Math.max(0.02, rr+jr));
+    B.push({
+      a:(i/n)*Math.PI*2 + jr*3.0 + ja, r:r,
+      k:0.70+0.30*r,            // 几何粗细：外圈毛略粗
+      L:1-0.30*r,               // 毛长：中心最长 → 形成笔锋
+      layer: r<=CORE_R ? 0 : 1, // 0=笔柱（心毫）1=被毫（外圈）
+      seed:rnd(),
+      EI:0.5, cap:1, tint:'#2F6A86', tintOff:'#9FBECB',   // 由 applyMaterial 填
+      pen:0, f:0, kT:0, fri:0, tor:0, lag:0, mem:0,
+      contact:false, slip:false, ld:1, ink:0, bend:0,
+      _wasC:false                              // 该毛上一帧是否触纸（落纸瞬间从笔腹蓄墨）
+    });
+  }
+});
+/* 正中心补一根锋尖毛 */
+B.push({a:0, r:0, k:0.70, L:1, layer:0, seed:rnd(), EI:0.5, cap:1,
+        tint:'#2F6A86', tintOff:'#9FBECB', pen:0, f:0, kT:0, fri:0, tor:0,
+        lag:0, mem:0, contact:false, slip:false, ld:1, ink:0, bend:0, _wasC:false});
+
+/* 换笔 = 换毛料配比：把每根毛的 EI / 蓄墨 / 配色按它所在分层重新赋值 */
+function applyMaterial(key){
+  const lay = MATS[key].layers;
+  for(let i=0;i<B.length;i++){
+    const h = HAIR[lay[B[i].layer]];
+    B[i].EI = h.EI; B[i].cap = h.cap;
+    B[i].tint = h.tint; B[i].tintOff = h.tintOff;
+  }
+}
+applyMaterial('jian');
+
+/* =========================================================
+   3. 全局状态
+   ========================================================= */
+const S = {
+  mat:'jian', paper:'half', D:0.34, theta:0, psi:-45, phiUi:0, phi:0,
+  autoPhi:false, phiAmp:45, phiHz:0.55,   // 默认不自动转笔：用户没转，笔尖状态就不许自己转（红箭头/红滑移圈都是它转出来的）
+  autoTilt:true, penPress:false, _penSeen:false, tiltSrc:'none',
+  speedLift:1.0, autoSpeed:true, vs:0, vAcc:0, liftAmt:0,
+  engine:'physics',                                   // 算法引擎：'physics' 自研笔毛仿真 | 'procreate' 复刻
+  /* 默认不叠加灰色湿晕；压感笔始终用同一墨色画完整接触面。 */
+  ink:1, toneK:1, absorb:0,
+  x:0, y:0, px:0, py:0, ux:1, uy:0, v:0,
+  drawing:false, liftT:0, touchT:0, deff:0, dD:0, _Dprev:0.34,
+  dotAcc:0, bleedN:0, stamp0:false, _lastR:0, _lastA:0,
+  P:0, Te:0, Tf:0, R:0, diss:0, cN:0, sN:0, lagAvg:0,
+  /* ---- §5.4 停笔自动收锋：鼠标/触控板拿不到压感，做不出「渐提」---- */
+  autoLift:true, idleT:0, strokeLen:0, flick:null, flickFade:1,
+  /* 收笔锥长(px) / 流线(0-1) / 流线平滑状态（fx,fy —— NaN 表示本笔还没起步） */
+  taperLen:34, stream:0.35, fx:NaN, fy:NaN,
+  /* 抖振死区(px)：Procreate 5.2 Motion Filtering 的对应物（只删侧向残差）*/
+  mfDz:1.6, touchL:16,
+  taperNow:1, tapOn:false, tapS:0, tapL:60, tapD:0, tapDrag:0,
+  /* ---- §10.4 行笔前瞻：延迟落墨 + 转折预判 ---- */
+  turnBoost:1, turnTgt:1, turnKind:'直行',
+  /* ---- §7 个性化校准： generalized → personal ---- */
+  V1m:1, Lm:1, tauM:1, calDone:false, calMSE:0, calSamples:0, calNotes:[],
+  lastLoop:0, loopAcc:0, phiPrev:0,
+  traceT:[], traceP:[], stats:[], counter:0, chartTab:'tor'
+};
+/* §5.4 停笔判定时长（秒）：论文取 0.28 s —— 短于转折顿笔的自然驻留 */
+const IDLE_LIFT = 0.28;
+/* 真实笔压与模拟提按分开：p=0 → d=0，所有正压力都连续参与笔宽计算。
+   时间常数按采样间隔计算，60/120/240 Hz 下响应一致，不设压力触发阈值。 */
+const PEN_DEPTH = 1.15;
+const PEN_RESPONSE = 0.018;
+const PEN_TILT_RESPONSE = 0.045;
+function usesPenPressure(){ return S._ptr === 'pen' && S.penPress && !demo; }
+/* 压感通路识别：**不止看 pointerType** —— 部分 WebView（微信内置浏览器等）把
+   Apple Pencil 报成 'touch' 甚至 ''，但 pressure 仍是连续值；鼠标恒 0.5、手指恒 0/1。
+   落笔瞬间拿到「既不是 0/0.5/1 的中间压力」就认定为压感设备。
+   只认 pointerType 的旧写法在这些环境里会静默退回模拟通路 —— 笔画退化成
+   「一枚枚半透明圆章」（用户截图症状），且界面上没有任何提示。 */
+function penChannel(e){
+  if(!e) return false;
+  if(e.pointerType === 'pen') return true;
+  const p = e.pressure;
+  if(!Number.isFinite(p)) return false;
+  return p > 0.02 && p < 0.98 && Math.abs(p - 0.5) > 0.02;
+}
+/* 输入通路读数：让用户一眼看出当前走的是原生压感还是模拟提按 */
+function updPathNote(){
+  const el = document.getElementById('o-path'); if(!el) return;
+  const native = usesPenPressure();
+  el.textContent = native
+    ? ('原生压感' + (S._ptr === 'pen' && S.tiltSrc === 'sensor' ? '（含倾角）' : ''))
+    : '模拟提按（速度推断）';
+  el.style.color = native ? '#1a7a4a' : '#8a6d1f';
+}
+function pressureDepth(p){
+  const u = Math.max(0, Math.min(1, p));
+  /* 低压仍有非零斜率，不设触发门槛；低压区主要动笔锋，高压区再铺开笔腹。
+     ---- 2026-10-23 复核：这条曲线**本来就是凸的**，不用改 ----
+     实测渲染宽度（压力 0.10→0.90，段间距放到 150px 才不被邻段裁切）：
+       9 → 19 → 30 → 43 → 61 → 80 → 97 px
+     一阶差分 +10 +11 +13 +18 +19 +17；二阶差分 +1 +2 +5 +1 —2
+     → f''(x)>0 成立（越使劲涨得越快），动态范围 10.8×，高压段 0.55→0.90 仍涨 59%。
+     曾误以为「高压端饱和」，其实是测量脚本把段间距设成 46px、而笔画直径可达 97px，
+     窗口裁掉了笔画上下缘 → 永远量到 40px 的饱和假象。曲线保持原样。 */
+  return PEN_DEPTH*(0.025*u + 0.975*Math.pow(u,2.2));
+}
+function firstPenDepth(target){
+  const scale = W/REF;
+  const r0 = 26*scale*MATS[S.mat].splay*(0.75+0.5*scale);
+  return Math.min(target,0.60*Math.pow(0.16*scale/Math.max(1e-9,r0),1/0.85));
+}
+function advancePenDepth(time){
+  if(!usesPenPressure() || !S.drawing || S._penDepthAt === undefined) return;
+  const dt = Math.max(0,time-S._penDepthAt);
+  const target = S._penTargetD;
+  S.D = target === 0 ? 0 : target+(S.D-target)*Math.exp(-dt/PEN_RESPONSE);
+  S._penDepthAt = Math.max(time,S._penDepthAt);
+  S.deff = S.D;
+  setSlider('s-d',S.D);
+}
+
+/* §7 校准：六类标准笔画 · 运笔中轴（归一化）+ 理想提按曲线 d(s)
+   中轴画出来就是「变宽度的」——宽度即 d(s)，既指方向，也告诉用户这一段该按多深。
+   d 的量纲与 S.D 一致（0.1~1.2 可用），target = 1 - min(1, d/1.15)。 */
+const STROKES = {
+  heng:{ name:'横', hint:'逆锋起笔略驻 → 中行略提 → 收笔回锋顿',
+    path:[[0.15,0.35],[0.32,0.34],[0.50,0.33],[0.68,0.34],[0.85,0.35]],
+    d:[[0,0.60],[0.08,0.98],[0.20,0.84],[0.50,0.68],[0.78,0.74],[0.92,1.00],[1,0.88]] },
+  shu:{ name:'竖', hint:'横向落笔 → 中锋下行 → 悬针渐提出锋',
+    path:[[0.50,0.14],[0.50,0.33],[0.50,0.52],[0.50,0.70],[0.50,0.88]],
+    d:[[0,0.96],[0.12,0.90],[0.45,0.76],[0.72,0.50],[0.90,0.26],[1,0.14]] },
+  dian:{ name:'点', hint:'顺势落笔 → 顿笔成点 → 回锋收',
+    path:[[0.40,0.34],[0.47,0.43],[0.53,0.51],[0.58,0.59]],
+    d:[[0,0.52],[0.35,0.86],[0.70,1.00],[1,0.76]] },
+  pie:{ name:'撇', hint:'起笔重按 → 向左下渐提 → 末端出锋',
+    path:[[0.68,0.18],[0.60,0.33],[0.50,0.48],[0.40,0.63],[0.30,0.79]],
+    d:[[0,1.00],[0.18,0.90],[0.50,0.64],[0.78,0.34],[1,0.13]] },
+  na:{ name:'捺', hint:'轻起 → 右下渐按 → 捺脚重顿 → 略提出锋',
+    path:[[0.28,0.22],[0.39,0.35],[0.50,0.48],[0.61,0.61],[0.74,0.74]],
+    d:[[0,0.28],[0.30,0.56],[0.58,0.80],[0.80,1.00],[0.90,0.84],[1,0.28]] },
+  shugou:{ name:'竖钩', hint:'下行 → 底部驻顿 → 向左上趯出',
+    path:[[0.54,0.16],[0.54,0.36],[0.54,0.56],[0.52,0.72],[0.45,0.80],[0.36,0.75]],
+    d:[[0,0.92],[0.40,0.78],[0.66,0.72],[0.80,1.00],[0.90,0.58],[1,0.15]] }
+};
+const CAL_ORDER = ['heng','shu','dian','pie','na','shugou'];
+const CAL_KEY = 'fenghao-cal-v1';
+/* d(s)：折线插值 */
+function catD(pts, s){
+  if(s<=pts[0][0]) return pts[0][1];
+  for(let i=1;i<pts.length;i++){
+    if(s<=pts[i][0]){
+      const a=pts[i-1], b=pts[i], u=(s-a[0])/Math.max(1e-6,b[0]-a[0]);
+      return a[1]+(b[1]-a[1])*u;
+    }
+  }
+  return pts[pts.length-1][1];
+}
+
+/* =========================================================
+   4. 画布
+   ========================================================= */
+const paperCv = document.getElementById('paper');
+const pctx = paperCv.getContext('2d');
+const inkCv = document.createElement('canvas'), ictx = inkCv.getContext('2d');
+const texCv = document.createElement('canvas'), tctx = texCv.getContext('2d');
+const tipCv = document.getElementById('tip'), tipCtx = tipCv.getContext('2d');
+const chartCv = document.getElementById('chart'), chartCtx = chartCv.getContext('2d');
+let W=0, H=0, DPR=1;
+
+function fit(cv,ctx,w,h){
+  cv.width = Math.round(w*DPR); cv.height = Math.round(h*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  const rect = paperCv.parentElement.getBoundingClientRect();
+  W = Math.max(320, Math.round(rect.width - 20));
+  H = Math.round(W*0.70);
+  fit(paperCv,pctx,W,H); fit(inkCv,ictx,W,H); fit(texCv,tctx,W,H);
+  paperCv.style.height = H+'px';
+  const w2 = Math.round(tipCv.parentElement.getBoundingClientRect().width);
+  fit(tipCv,tipCtx,w2,152); tipCv.style.height='152px';
+  fit(chartCv,chartCtx,w2,172); chartCv.style.height='172px';
+  buildTexture();
+  ictx.clearRect(0,0,W,H);
+  render();
+}
+
+function buildTexture(){
+  const P = PAPERS[S.paper];
+  const base = S.paper==='raw' ? '#F5F1E6' : (S.paper==='sized' ? '#FAF8F2' : '#F7F4EC');
+  const fb   = S.paper==='raw' ? 430 : (S.paper==='sized' ? 130 : 260);
+  const fa   = S.paper==='raw' ? 1.7 : (S.paper==='sized' ? 0.5 : 1.0);
+  tctx.clearRect(0,0,W,H);
+  tctx.fillStyle = base; tctx.fillRect(0,0,W,H);
+  // 纸纤维：细横纹 + 稀疏麻点（生宣纤维长而显，熟宣几乎平滑）
+  for(let i=0;i<fb;i++){
+    const y = Math.random()*H, x = Math.random()*W, len = 8+Math.random()*(S.paper==='raw'?70:46);
+    tctx.strokeStyle = 'rgba(120,112,98,'+((0.012+Math.random()*0.02)*fa)+')';
+    tctx.lineWidth = 0.5;
+    tctx.beginPath(); tctx.moveTo(x,y); tctx.lineTo(x+len,y+(Math.random()-0.5)*1.6); tctx.stroke();
+  }
+  for(let i=0;i<Math.round(600*fa);i++){
+    tctx.fillStyle = 'rgba(120,112,98,'+((0.02+Math.random()*0.04)*fa)+')';
+    tctx.fillRect(Math.random()*W, Math.random()*H, 1, 1);
+  }
+  const g = tctx.createRadialGradient(W*0.5,H*0.45,W*0.18,W*0.5,H*0.5,Math.max(W,H)*0.78);
+  g.addColorStop(0,'rgba(255,253,248,0)');
+  g.addColorStop(1,'rgba(112,110,106,'+(0.10*(S.paper==='sized'?0.55:1)).toFixed(3)+')');
+  tctx.fillStyle = g; tctx.fillRect(0,0,W,H);
+}
+
+/* 归一化坐标 → 像素 */
+function pxX(nx){ return W*0.10 + nx*(W*0.80); }
+function pxY(ny){ return H*0.10 + ny*(H*0.80); }
+
+/* =========================================================
+   5. 物理核心：逐毛黏滑摩擦 + 提按迟滞
+   ========================================================= */
+function stepPhysics(dt, dphi){
+  const mat = MATS[S.mat];
+  const nativePressure = usesPenPressure();
+  const tanT = Math.tan(Math.min(70,S.theta)*Math.PI/180);
+  const psi = S.psi*Math.PI/180;
+  const D = S.deff;
+  S.dD = (D - S._Dprev)/Math.max(1e-4,dt); S._Dprev = D;
+
+  let P=0, Te=0, Tf=0, diss=0, cN=0, sN=0, lagSum=0;
+  /* 提按的加载/卸载不对称（Bouc-Wen 的一阶简化）：按下去硬、提起来软 */
+  const ldTarget = S.dD > 0.06 ? (1+0.30*mat.hys)
+                 : S.dD < -0.06 ? (1-0.22*mat.hys) : 1;
+
+  for(let i=0;i<B.length;i++){
+    const b = B[i];
+    let pen = D - 0.30*b.r + 0.34*b.r*tanT*Math.cos(b.a-psi);
+    /* 锋尖恒接触：真实毛笔最中心那几根毛在任何轻触下都着纸。
+       旧判据 D−0.30r>0.002 让「全部毛同时离纸」变成一道悬崖 ——
+       轻压、出锋末段、压感笔压力≈0 时墨迹直接硬切；
+       压力在 0 附近抖动就断成一截一截的小短划（用户看到的「断断续续」）。
+       给内圈毛（r≤0.24）一条着纸下限后，收笔收到最后是一根「锋」而不是一刀切断。 */
+    if(!nativePressure && pen <= 0.002 && b.r <= 0.24 && D > 0.012) pen = 0.004;
+    if(nativePressure && D <= 0) pen = 0;
+    b.pen = pen;
+    if(pen > (nativePressure ? 0 : 0.002)){
+      b.contact = true;
+      b.ld += (ldTarget - b.ld)*Math.min(1, 10*dt);
+      b.f = pen*b.k*b.EI*1.6*b.ld;                 // 力由该毛自己的毛料决定（兼毫芯硬外软）
+      /* 逐毛笔尖含墨量改由 stampInk 维护：落纸即蓄墨、行笔独立耗干 → 飞白自然涌现 */
+
+      b.kT  = (b.EI*mat.kTor + PACK)*b.k*b.r*b.r*KT;
+      /* 墨量→摩擦：墨多润滑、墨少干涩 → 含墨量是 μ 的函数（L4 纸墨耦合） */
+      b.fri = mat.mu*(1 + (1-S.ink)*0.7)*PAPERS[S.paper].mu*b.f*b.r*FR;   // 纸面越生（未加胶矾）越涩
+
+      /* 笔杆自转带动毛根；毛尖被纸摩擦拖住 → 产生滞后角 lag */
+      b.lag += Math.max(-0.07, Math.min(0.07, dphi));
+      const t = b.kT*b.lag;
+      if(Math.abs(t) > b.fri && b.fri > 1e-9){
+        const over = Math.abs(t) - b.fri, ds = over/b.kT;   // 打滑
+        b.lag -= Math.sign(t)*ds;
+        diss  += b.fri*ds;                                  // 摩擦耗散 = 摩擦力 × 滑移距离
+        b.slip = true; sN++;
+        b.tor  = Math.sign(t)*b.fri; Tf += b.tor;
+      } else {
+        b.slip = false; b.tor = t;   Te += t;
+      }
+      lagSum += Math.abs(b.lag); P += b.f; cN++;
+    } else {
+      /* 离纸：摩擦消失 → 毛按弹性回弹，但留下记忆 */
+      b.contact = false; b.slip = false; b.f = 0; b.ld = 1;
+      b.mem = Math.max(b.mem, Math.abs(b.lag));
+      b.lag *= 0.55;
+      b.tor = b.kT*b.lag;
+    }
+    b.mem *= Math.exp(-0.9*dt);   // 「笔锋记忆」缓慢消退，舔笔才能复原
+    b.bend = Math.min(0.55, S.v*0.055/(0.35+mat.EI*b.k));
+  }
+
+  /* 阻尼项：毛间摩擦的黏性损耗（并入弹性项，量级很小） */
+  S.P=P*PS; S.Te=Te*TS; S.Tf=Tf*TS; S.diss=diss*TS;
+  S.cN=cN; S.sN=sN;
+  S.lagAvg = cN ? lagSum/cN*180/Math.PI : 0;
+  S._lastDiss = diss*TS;
+  S.R = (Te+Tf)*TS;
+}
+/* 饱和估算：全部接触毛都进入滑移时的上限（用于材质对比与阻力条） */
+function estimate(key){
+  const mat = MATS[key];
+  const tanT = Math.tan(Math.min(70,S.theta)*Math.PI/180);
+  const psi  = S.psi*Math.PI/180;
+  let peak=0, lagSum=0, c=0, P=0;
+  const muE = mat.mu*(1 + (1-S.ink)*0.7)*PAPERS[S.paper].mu;   // 与 stepPhysics 同样的含墨摩擦 + 纸面涩度
+  for(let i=0;i<B.length;i++){
+    const b=B[i];
+    const pen = S.D - 0.30*b.r + 0.34*b.r*tanT*Math.cos(b.a-psi);
+    if(pen<=0.002) continue;
+    const f  = pen*b.k*b.EI*1.6;
+    const kT = (b.EI*mat.kTor + PACK)*b.k*b.r*b.r*KT;
+    const fr = muE*f*b.r*FR;
+    peak += fr; lagSum += fr/kT; P += f; c++;
+  }
+  return {peak:peak*TS, lag:c? lagSum/c*180/Math.PI : 0, P:P*PS, n:c};
+}
+
+/* =========================================================
+   6. 落墨：接触面 = 纸面截笔尖锥面
+   - 半径取解析式 R(d)=R₀·(d/0.6)^0.85：与逐毛接触一致，但连续化。
+     逐毛取 max(rr) 会因同心环离散而「跳宽度」（5 级台阶），疾扫渐细就不平滑。
+   - 圆锥曲线 r(u)=R(1-e²)/(1-e·cos(u-ψ))：e=sinθ/sinβ。
+     焦点在笔轴上，向「压得最深的一侧 ψ」伸长 → 侧锋扁长且偏向一侧。
+     （注意方向：ψ 侧毛压得最深、铺得最开，所以是 -e·cos，不是 +e·cos）
+   - 轮廓噪声相位绑定「笔程 S._sl 与行笔速度」，驻笔时冻结 →
+     同一位置反复盖印得到同一条轮廓，点按就是干净的圆，不会叠成花边团块。
+   - 全湿 → 单一路径 + 内芯加深（无扇区接缝）；有干毛 → 逐湿扇区，
+     干扇区不上色 = 飞白丝缕
+   ========================================================= */
+const SECT = 24;                        // 角向扇区数（越多，飞白丝缕越细）
+/* 干湿分界：扇区含墨量低于此值就整块不上色（露纸白 = 飞白）。
+   原来是 0.04，太宽松 → 半干扇区被画成灰色，整条字像掺了水。
+   上一轮提到 0.32 修好了「发灰」，但飞白来得太早（墨量 34% 就开始断），
+   用户反馈「一直写笔有墨但墨迹会断」→ 收到 0.24，配合上面的 wetOf 新映射，
+   墨量 22% 以上都不飞白。仍是二值判定：干就是干、白就是白，墨色不受影响。 */
+/* ---- 飞白覆盖度（RealBrush 真媒介实测标定 2026-10-21）----
+   真媒介枯笔不是「有/无」二值：干水彩实测笔体内 ~12% 面积处于半覆盖以下、
+   ~5% 近枯，且沿笔行递增（半覆盖占比 6.0%→8.0%→13.7%→14.7%）。
+   旧写法（wet <= 阈值 整块不上色）只能做出「要么满墨、要么整段断白」——
+   引擎同场实测：沿笔行渐变像素占比 0.0%、墨量 0.12 时 41% 的笔画直接消失。
+
+   两处根因（2026-10-21 二修）：
+   (1) 覆盖度斜坡被挤在 wet<0.24 的一小段里 —— wet=1~0.24 全算「满覆盖」，
+       于是只有快干透时才有飞白。改成 wet∈[FLY_WET0, FLY_WET1] 全程斜坡。
+   (2) **叠印把部分覆盖冲掉了**：一枚章只覆盖 cov，但同一个纸面点会被
+       m ≈ 2R/FLY_CORR 个独立抖动单元先后盖到，最终覆盖度是
+       1-(1-cov)^m —— cov=0.5、m=6 时实测仍有 98% 覆盖，等于没有飞白。
+       所以给抖动的是「单枚章的命中率」c = 1-(1-C)^(1/m)，
+       C 才是我们要的**叠印后**目标覆盖度。m 用当前章半径 R 现算，
+       并按 FLY_MMAX 封顶（大笔否则要把 c 压到 0.07，空洞会长到 90px）。
+
+   关键：**仍然「有墨就满浓度」**，不引入半透明分层 —— 分层半透明章在慢速区
+   会露单层灰环（前几轮「扇子/同心环/晕圈」的老毛病，不能重犯）。 */
+const FLY_WET0 = 0.08;                  // wet ≤ 此值 → 完全干（覆盖度 0）
+const FLY_WET1 = 0.80;                  // wet ≥ 此值 → 满覆盖（走单一路径，无扇区接缝）
+const FLY_CORR = 7;                     // 飞白丝缕的相关长度（px 笔程）
+const FLY_MMAX = 24;                    // 叠印补偿的独立抖动单元数上限
+const FLY_MGAIN = 2.5;                  // M 的标定增益（见下）
+const FLY_GAMMA = 1.6;                  // 覆盖度曲线：>1 → 湿端平缓、中后段陡（先见丝缕，再见断白）
+function flyTarget(wet){                // 目标（叠印后）覆盖度 C
+  if(wet >= FLY_WET1) return 1;
+  if(wet <= FLY_WET0) return 0;
+  const t = (wet - FLY_WET0)/(FLY_WET1 - FLY_WET0);
+  return 1 - Math.pow(1 - t, FLY_GAMMA);
+}
+function flyCov(wet, R){                // 单枚章的命中率 c（已补偿叠印）
+  const C = flyTarget(wet);
+  if(C >= 1) return 1;
+  if(C <= 0.004) return 0;
+  /* M = 覆盖同一个纸面点的**独立**（扇区×单元）判定数。
+     一个点被 2√(R²-y²) ≈ 1.6R px 的扫过区间覆盖，期间它依次落入 ~8 个扇区、
+     每个扇区占 1~2 个抖动单元 → M ≈ 10~16（实测反推：R=22 时 M≈15）。
+     只用 2R/FLY_CORR（≈6.4）会**补偿不足** —— 单章命中率给高了，
+     实测空洞只有目标的 1/30（墨 0.25 全程 0.3%，本该 12%）。
+     增益 2.5 把 R=22 时的 M 提到 ~17，与反推值吻合。 */
+  const m = Math.max(1, Math.min(FLY_MMAX, 1 + FLY_MGAIN*(2*(R||0))/FLY_CORR));
+  return 1 - Math.pow(1 - C, 1/m);
+}
+function flyHit(k, arc, cov){
+  if(cov >= 1) return true;
+  if(cov <= 0.02) return false;
+  const cell = Math.floor(arc/FLY_CORR);
+  let h = (Math.imul(k, 374761393) + Math.imul(cell, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = (h ^ (h >>> 16)) >>> 0;
+  return (h % 1024)/1024 < cov;
+}
+/* 墨色：比原先更黑 —— 原先 C_INK=(19,20,23) 叠到纸上偏炭灰，
+   尤其细笔与飞白处「发灰」；现在压到近纯黑（略留冷调，避免死板的 0,0,0）。
+   注意：变黑的是「浓度」，飞白仍靠「干扇区不上色」产生，
+   所以「墨尽飞白 而非 字迹发灰」这条核心命题不受影响。 */
+const C_INK  = '8,8,11';                // 墨色：近黑，微冷
+const C_HALO = '62,64,70';              // 湿晕：中性灰（略压暗，配合更小的晕圈）
+const STEP   = 1.3;                     // 每 1.3px 笔程盖一枚印（按笔程而非帧率）
+
+function contourPath(cx,cy,pts,M,k){
+  ictx.beginPath();
+  for(let m=0;m<=M;m++){
+    const q = pts[m % M], xx = cx+q[0]*k, yy = cy+q[1]*k;
+    if(m===0) ictx.moveTo(xx,yy); else ictx.lineTo(xx,yy);
+  }
+  ictx.closePath();
+}
+/* ---- 拖曳形变（drag warp）----
+   驻笔时毛束对称铺开 → 截面是正圆；
+   一旦行笔，笔尖被纸摩擦拖住、毛向后方倒伏：
+     · 前缘（mx>0）被压住、铺不开 → 收缩
+     · 后缘（mx<0）被拖着走、倒伏铺开 → 向后拉长
+     · 侧向被带着走、毛趋于顺向排列 → 收窄
+   于是截面前后不对称、沿行笔方向拉长，成「水滴/后曳」形。
+   这就是「点一个点是正圆，一拖起来与纸面的界面就不是正圆」的原因。 */
+function dragWarp(px,py,ux,uy,t){
+  if(t <= 0.001) return [px,py];
+  const mx =  px*ux + py*uy;                 // 沿行笔方向分量（正=前缘）
+  const my = -px*uy + py*ux;                 // 垂直行笔方向分量
+  const sx = mx > 0 ? (1 - 0.42*t) : (1 + 0.95*t);
+  const mx2 = mx*sx, my2 = my*(1 - 0.20*t);
+  return [mx2*ux - my2*uy, mx2*uy + my2*ux];
+}
+/* 驻笔洇墨：不再盖印，只让湿晕缓慢外扩（纸吸墨），到上限停住。
+   生宣扩得远、熟宣几乎不动 —— 这是纸张生熟度最直观的差别。
+   原先最大外扩到 R×(1.02+0.36·bleed)，生宣可达 1.58R —— 视觉上一团灰晕，
+   用户反馈「没那么晕」，故压到 R×(1.01+0.13·bleed)，生宣约 1.15R。 */
+function stampBleed(){
+  const P = PAPERS[S.paper];
+  const R = S._lastR || 12*W/REF;
+  const t = Math.min(1, S.bleedN/44);
+  ictx.fillStyle = 'rgba('+C_HALO+','+(0.013*P.halo*(1-0.55*t))+')';
+  ictx.beginPath(); ictx.arc(S.x, S.y, R*(1.01+0.13*t*P.bleed), 0, 6.2832); ictx.fill();
+}
+
+/* ax,ay → bx,by 是要落墨的这一段。默认取 S 的当前段（驻笔 / 演示 / 出锋走这条路径）。
+   延迟落墨时由 flushInk 显式传入「历史段」，这样墨迹可以比指针晚一点生成。 */
+function stampInk(ax, ay, bx, by, tf, zhe, hk, zheW, penFrom, smooth){
+  /* zhe/hk/zheW：该段入队时的转锋/钩/正交折标记（pushSegment 随段记录）——
+     特化必须按入队时刻判定（INK_DELAY 延迟 4~6 帧，帧级状态到时已回落）。
+     zheW 只标「正交折」：0.72 章宽系数是几何投影修正（45° 斜段投影宽 41%），
+     只给干净的横↔竖折；摇摆/飞跃的急转不标（会把落下段削成钢丝）。 */
+  const nativePressure = usesPenPressure();
+  /* penFrom = 本段**起点**的压深（出锋由 stepAutoLift 记 f.dFrom；其余通路不传，
+     退化成 S.deff → 段内插值等于常量，行为与原来完全一致）。
+     为什么要段内插值：一帧之内所有章共用一个 R，而出锋每帧宽度掉 ~25% →
+     针尾是一串 13px 宽的「平台」（用户截图：一节节变细的珠子链，顶端带圆豆）。
+     按 t 从起点压深插到段末 S.deff，宽度沿笔程连续。 */
+  const dFrom = Math.max(0, penFrom === undefined ? S.deff : penFrom);
+  /* 段内插值的终点：队列段由 flushInk 用「下一段的 Dd」设定（S._segDeffTo）；
+     不走队列的路径（出锋/驻笔/demo）不设 → 用 S.deff，与原来一致。 */
+  const dTo = (penFrom !== undefined && S._segDeffTo !== undefined) ? Math.max(0, S._segDeffTo) : S.deff;
+  const orthoZhe = !!zhe, inHook = !!hk;
+  /* smooth = 该段入队时的「行笔平滑度」∈[0,1]（pushSegment 算，见 smoothNow）。
+     只压外缘（拖曳形变 + 边缘毛刺），不动中锋宽度与起收笔 —— 与 zhe 分开传，
+     因为 zhe 还管锥度保底/外拓语义，门卫严；smooth 门卫松（累积转向）。 */
+  const sm = (smooth === undefined ? 0 : Math.max(0, Math.min(1, smooth)));
+  const mat = MATS[S.mat];
+  /* tf = 收笔锥度，由 flushInk 按「距笔画末端的弧长」给出 —— 与速度无关。
+     Procreate 的 Touch / Pressure Taper：抬笔那一下做不出漂亮锥度，就人为延长它。 */
+  const tfv = nativePressure ? 1 : ((tf === undefined || !(tf > 0)) ? 1 : tf);
+  const P   = PAPERS[S.paper];
+  const scale = W/REF;
+  const psiR = S.psi*Math.PI/180;
+  const thR  = Math.min(70,S.theta)*Math.PI/180;
+  const phiR = S.phi*Math.PI/180;
+  const TAU  = Math.PI*2;
+  const x0 = (ax === undefined) ? S.px : ax;
+  const y0 = (ay === undefined) ? S.py : ay;
+  const x1 = (bx === undefined) ? S.x  : bx;
+  const y1 = (by === undefined) ? S.y  : by;
+  const dist = Math.hypot(x1-x0, y1-y0);
+  S._sl = (S._sl||0) + dist;
+
+  /* ---- ⓪ 先算笔尖半径：下面的「防断线」判据要用它 ---- */
+  const splay = mat.splay*(1 - 0.24*Math.min(1, Math.abs(S.phi)/95));
+  const R0 = 26*scale*splay*(0.75+0.5*scale);
+  /* 起笔顿（§5.1）：本笔头 2.5% 画布宽内先重按出一个「顿点」再回归提按 ——
+     起笔才有形。startK 从 1 衰减到 0：宽度 +22%、tone +20%。 */
+  const startK = Math.max(0, 1 - (S.strokeLen||0)/(0.025*W));
+  /* 出锋的宽度必须接上收笔锥度的尖端（flickCarry），否则锥尖之后又鼓出一个圆头 */
+  const carry = S.flick ? (S.flickCarry === undefined ? 1 : S.flickCarry) : 1;
+  // 压感笔不夹到最小半径：0 压力对应 0 面积，正压力从笔锋连续铺开。
+  const radiusAt = d => R0*Math.pow(Math.max(0, d)/0.60, 0.85);
+  const Rraw = radiusAt(nativePressure ? S.deff : Math.max(0.008, S.deff));
+  const Rfrom = nativePressure ? radiusAt(dFrom) : Rraw;
+  S._wSum = (S._wSum||0) + Rraw; S._wN = (S._wN||0) + 1;                  // 本笔平均体宽（锥长用）
+  const R  = Rraw*tfv*carry*(zheW ? zheW : 1);
+  /* 转锋窗口的章宽乘 1/√2（0.72）：45° 斜切段的章沿对角线排布，其半径在水平/
+     垂直方向的投影天然是 R×√2 ≈ 1.41R —— 折角比行笔宽 41%，**这不是墨多、
+     是几何投影**（调 deff/提笔都盖不过这 41%）。乘 0.72 后投影 = R，折角与
+     横竖等宽（字帖折角从不大过行笔）。
+     门控必须用**入队时**的 zheW 标志，不能用落墨帧的 S._turnStable —— INK_DELAY
+     让段滞后 4~6 帧落墨，帧级状态到时已回落（实测摇摆折角 6 枚离轴章 0 枚吃到
+     折扣 → 折肩外缘一圈花瓣弧，即用户截图的症状）。zheW 由 pushSegment 按
+     「段自身方向离轴 + 近段急转」判定（见那边注释）。 */
+
+  /* ---- ① 按笔程盖印；驻笔不重复叠印 —— 这是「点变团块」的主因之一 ---- */
+  let n;
+  if(nativePressure){
+    if(dist <= 0.001){
+      /* 原地加压也即时扩大墨面 —— 但必须限频、限幅度（用户 2026-10-23「一堆墨点子」）。
+         Apple Pencil 240Hz 采样里大量样本位置几乎不变，而压力在 0.6~0.65 之间抖。
+         旧写法「压深一变就补盖一枚**满宽**章」，240Hz 下同一位置会连盖几十枚
+         同样大小的满宽圆 → 叠成一坨坨墨点，且沿笔画等距重复（用户截图那串黑团）。
+         两道闸：① 相对变化 <6% 视为噪声，不补；
+                 ② 6ms 内不重复补（240Hz ≈ 4.2ms/样本，等于隔一个样本才有机会）。
+         只影响 native 通路（鼠标走 else 分支，一行未改）。 */
+      if(S.deff <= 0){ S._penStampedD = 0; S._penContour=null; return; }
+      const dPrev = S._penStampedD;
+      const relCh = dPrev > 0 ? Math.abs(S.deff - dPrev)/Math.max(1e-6, dPrev) : 1;
+      const tNow2 = Number.isFinite(S._penTime) ? S._penTime : 0;
+      if(relCh < 0.06) return;                       // 噪声级变化：不补章
+      if(tNow2 - (S._penStatT || -1) < 0.006) return; // 限频
+      S._penStatT = tNow2;
+      n = 1;
+    } else {
+      if(Math.max(dFrom, S.deff) <= 0){ S._penContour=null; return; }
+      const gap = Math.max(0.25, Math.min(STEP, Math.min(Rfrom, R)*0.4));
+      n = Math.min(8192, Math.max(1, Math.ceil(dist/gap)));
+    }
+    S.dotAcc = 0;
+  } else {
+    S.dotAcc = (S.dotAcc||0) + dist;
+    n = Math.floor(S.dotAcc / STEP);
+    if(n > 0) S.dotAcc -= n*STEP;
+    /* 单帧上限原为 32 —— 一帧位移大时（iPad 高刷采样被合并、或 rAF 被节流到 30 fps）
+       印章间距就被拉到超过笔尖直径，笔画断成「一个个墨点」。这正是 iPad 上的症状。
+       ① 上限提到 96；② 再用笔尖半径兜底：相邻印章间距不得大于 R·0.45，
+       保证相邻两枚充分重叠，任何速度下都连得起来。 */
+    if(n > 96) n = 96;
+    /* 间距兜底从 n>1 改成 n>=1：慢写/收笔时每帧只走一两像素（n=1），旧的 n>1
+       门槛让兜底整个跳过 —— 而恰是这些帧章最少；等收笔锥度把 R 缩到 2px 以下，
+       固定 1.3px 的间距相对 R 就超过 0.65，相邻两章不再充分重叠 → 末端拖出
+       一串「珠子」（实测锥度末端的 beads）。n=1 时 nSafe 通常也算出 1，无副作用。 */
+    if(n > 0){
+      const nSafe = Math.ceil(dist / Math.max(0.5, R*0.45));
+      if(nSafe > n) n = Math.min(160, nSafe);
+    }
+    if(n === 0){
+      /* 不再强盖「落笔第一枚」——那一枚是全宽圆点，而紧随其后的段带着入笔锥度（更窄），
+         两者叠出一个「圆头 + 细颈」的双团块（用户截图里每个起笔/点都是这个形状）。
+         点按的墨改由下面的驻笔积墨给（同样是实心圆，不受影响）。 */
+      /* 停住 ≥2 帧才算驻笔积墨 —— 落笔的第一帧就盖一枚满宽圆点，
+         会与紧随其后的入笔锥度（更窄）叠出「圆头 + 细颈」（用户截图里的形状）。
+         **转锋停顿不积墨**（peekTurn 检验）：折角处鼠标停住微调方向时，满宽章
+         会一堆堆在一点 → 用户截图那坨墨团。「顿笔」（直行停顿）照常积墨。 */
+      /* 驻笔必须**钉在一个点**上：锚点从第一帧驻笔记起，之后漂开 >0.35R 就说明
+         这不是顿笔、是慢画 —— 立刻停手交回正常盖章。
+         旧写法每帧都按当前点盖（n=1，上限 6 枚），折角处手一顿又在漂 → 6 枚章
+         沿漂移方向散成一把「扇子」贴在折肩外侧（用户截图那 6 个半透明圆）。
+         3 枚以上散开就没有叠印加深的效果，只剩一堆 15% 的灰。 */
+      if(dist < 0.06 && S.idleT > 0.03 && peekTurn() < 0.25){
+        if(S._idleAnchor === undefined) S._idleAnchor = { x:S.x, y:S.y };
+        if(Math.hypot(S.x-S._idleAnchor.x, S.y-S._idleAnchor.y) > Math.max(1.5, R*0.35)){
+          S._idleAnchor = undefined; S.bleedN = 6; return;      // 放弃驻笔，交回正常盖章
+        }
+        /* 真·驻笔：只积墨变浓（轮廓与相位已冻结 → 干净地加深），**不再洇墨**。
+           原先这里每帧叠一个灰圈（最多 32 次）→ 累积约 28% 的灰，
+           顿笔/收笔处就糊成一团「堆了水的淡墨」—— 正是用户反馈的「稀释感」。
+           墨是有限资源，驻笔只会把这一点的墨吃干，不该凭空洇出一圈水渍。
+           封顶 14 → 6：折角处鼠标停住微调方向时（用户截图那坨墨团），
+           14 枚满宽章全堆在一点；6 枚给顿笔足够的浓、又不会堆成瘤。 */
+        if(S.bleedN < 6){ n = 1; }
+        else {
+          /* 洇墨默认关掉（absorb 默认 0.10）。想要生宣那种驻笔洇开，
+             把「洇墨倍率」拉过 35% 即可 —— 能力保留，只是不再是默认行为。 */
+          if(S.absorb > 0.35 && S.bleedN < 46) stampBleed();
+          S.bleedN++; return;
+        }
+        S.bleedN++;
+      } else return;                                     // 还没走满 STEP，等下一帧
+    } else S.bleedN = 0;
+
+  }
+
+  /* ---- ② 逐毛接触 → 扇区含墨图 ---- */
+  const sInk = new Array(SECT).fill(0), sCnt = new Array(SECT).fill(0);
+  let cN=0, inkSum=0, capSum=0, minInk=9;
+  for(let i=0;i<B.length;i++){
+    const b = B[i];
+    // 提笔的最后一个采样可能已经为 0；仍需画完上一正压力到 0 的连续细尾。
+    if(!b.contact && !(nativePressure && b.r === 0 && dFrom > 0)){
+      b._wasC=false; continue;
+    }
+    /* 蓄墨量按毛料 —— 再乘「蘸墨负载」load：蘸墨时每根毛吸到的墨本就不均匀
+       （真笔蘸墨不是每根等量的）。旧写法只按容量等比蓄墨 → 所有毛含墨比例相同、
+       行笔耗尽时几乎同时越过干阈值 → 飞白只在笔尾突然炸开（引擎实测：墨 0.12 时
+       整段断死、沿笔行渐变 0%）。加入稳定的每毛负载差 0.55~1.45 → 各扇区先后
+       转干，飞白沿笔行渐次出现（真媒介干水彩实测：半覆盖占比 6%→15% 递增）。
+       load 按毛序号 hash，同一支笔每笔一致，不引入逐帧抖动。 */
+    if(!b._wasC){
+      const load = 0.55 + 0.90*(((Math.imul(i, 2654435761) >>> 24) & 0xFF)/255);
+      b.ink = Math.max(b.ink, S.ink*b.cap*(0.60+0.80*b.seed)*load); b._wasC=true;
+    }
+    const ang = b.a + phiR - b.lag + b.mem*0.35;
+    cN++; inkSum += b.ink; capSum += b.cap*(0.60+0.80*b.seed); if(b.ink < minInk) minInk = b.ink;
+    const si = Math.floor((((ang%TAU)+TAU)%TAU)/TAU*SECT) % SECT;
+    sInk[si] += b.ink; sCnt[si]++;
+  }
+  if(!cN) return;
+  /* 映射 (ink-0.10)/0.32 → (ink-0.06)/0.30：
+     旧式下含墨量 0.42 才算「全湿」，而笔尖稳态含墨约 S.ink·cap·(0.6~1.4)，
+     于是墨量掉到 ~34% 就开始判定干扇区 —— 「还有墨却断」。
+     新式把零点与斜率都放宽，墨量 22% 以上都不会飞白。 */
+  const wetOf = k => sCnt[k] ? Math.min(1, Math.max(0, (sInk[k]/sCnt[k]-0.06)/0.30)) : 1;
+  let minWet = 1;
+  for(let k=0;k<SECT;k++){ const w = wetOf(k); if(w < minWet) minWet = w; }
+
+  /* 疾书变淡 —— 这是「墨还是太淡」的主因：
+     原式 1/(1+dist*0.010)，一帧走 100px 时 flow=0.50，浓度直接砍半。
+     但这**违反 §6.3 的核心结论**：单位面积墨密度与笔画宽度无关，
+     疾书应该「变细」（提笔 → R 小），而不是「变淡」。
+     淡只能来自墨尽（飞白），不能来自速度。
+     削弱到 0.0025 并加下限 0.85：只留一点点视觉上的速度感。 */
+  const flow  = Math.max(0.90, 1/(1 + dist*0.0020));      // 疾书 → 略淡（几乎只留一点速度感）
+  const pool  = dist < 0.6 ? 1.12 : 1;                    // 驻笔积墨（顿笔，原 1.24 偏鼓）
+const bendA = (nativePressure || orthoZhe) ? 0 : Math.min(0.55, S.v*0.055/(0.35+mat.EI))*9*scale;
+  /* inkL 归一化修正：分母 = 当前墨量下的「饱和总量」，蘸饱 = 1.0。
+     旧式 inkSum/cN 是绝对均值，蘸满也只有 avg(cap)≈0.66 → 整笔天生灰一档。
+     S.ink<0.30 时分母兜底：残墨按残墨算，真正的干湿交给 wetOf/DRY_CUT。 */
+  const inkL  = Math.min(1, inkSum/(capSum*Math.max(0.30, S.ink)));
+  /* ---- 落墨浓度：按「单位面积墨密度」给，不是给每枚印章一个固定 alpha ----
+     一笔上某点被多少枚印章覆盖 ≈ 2R/STEP。若每枚的 alpha 固定，
+     细笔（R 小 → 覆盖少）就会淡到看不见 —— 这正是之前字迹发虚的主因。
+     物理上墨是「单位长度释放量 ∝ 接触宽度」，所以单位面积密度近似与宽度无关：
+     细线应该同样是黑的，只是细。于是把覆盖数除掉。
+     但要给 cover 设上限：驻笔时只盖 14 枚（不随 R 增长），
+     若还按 2R/STEP 除，大点会被除成灰的 —— 顿笔本该是浓墨。 */
+  /* ---- cover 反映**真实章距**（钩/趯斜挑段边缘起节的根治）----
+     上面 2R/STEP 假设理想密排（章距=1.3px）。慢速转锋/趯甩出时章距真的拉到
+     0.2R~1.5R（实测钩区 q75=1.53R），实际每点只被 2~4 枚覆盖；仍按 20 除，
+     单枚 alpha 就只剩 ~0.09 → 每枚更大的章从上一枚外露出一层灰环（斜挑段边缘
+     起节 + 底团外圈灰晕，用户看到的「粗糙」）。
+     修法：本段实际章距 gapReal=dist/n；cover 取「理想层数」与「实际层数」较小者
+     —— 疏排（gapReal>STEP）自动降 cover、单章变浓；原地堆叠（n=1、dist≈0）
+     仍走 2R/STEP 不变，所以不会把顿笔堆成深色药丸（上轮 ringBand 的失败点）。 */
+  const gapReal = n > 1 ? dist/Math.max(1,n) : STEP;
+  const cover = Math.max(1.2, Math.min(2*R/STEP, 2*R/Math.max(STEP, gapReal), 20));
+  /* tone 下限 0.45 → 0.62 → 0.72：轻按/出锋时也不能发灰。
+     墨是「浓淡」不是「稀释」—— 淡笔应该只是细、只是覆盖少，
+     而不是把黑墨兑成灰水。层次靠笔迹粗细与飞白表达，不靠降 alpha。 */
+  /* toneK = 墨色浓度系数（默认 1 = 浓墨；<1 = 淡墨）。
+     为什么要它：S.ink 调不到浓度 —— inkL 的分母有 max(0.30, S.ink) 兜底，
+     蘸饱的笔毛让 inkL 恒被 clamp 到 1，降墨量只会改变飞白时机、不改变浓淡。
+     Madono & Simo-Serra (CGF 2023) 的参考图是中灰淡墨（lum 60~170，纯黑仅 1%），
+     用浓墨引擎直接渲会得到一团黑块，对不上。设 toneK<1 即可复现那种
+     「铅笔/淡墨素描」的浓度，且**默认 1 对正常书写零影响**。 */
+  const tone  = Math.min(1, Math.pow(inkL, 0.45)
+                        *(0.86 + 0.14*Math.min(1, S.deff/0.35))   // 压深 → 浓淡（轻按略淡，但仍是黑）
+                        *flow*pool*(1 + 0.05*startK)*(S.toneK === undefined ? 1 : S.toneK));
+  /* per() 的单枚 alpha 上限原为 0.60 —— 叠印再多也只能趋近 0.60，
+     这正是「墨不够黑」的直接原因。抬到 0.90 后，同一笔的本质浓度上去了。
+     飞白不受影响：干扇区仍然整块不上色（wet<=0.04 continue），是「有/无」不是「淡」。 */
+  const per = function(t){
+    return Math.min(0.98, 1 - Math.pow(Math.max(1e-4, 1-t), 1/cover));
+  };
+  const penTone = Math.min(1, Math.pow(inkL, 0.45));
+  /* ---- 转锋段的章必须**满浓度** ----
+     单枚章的 alpha 只有 ~0.12（直行靠 20 层叠印才黑）。转锋时章会扇形散开，
+     折肩外缘只剩 1~3 层覆盖 → 那一圈泛成 ~15% 灰（用户截图的「鼓包」：
+     实测是 3 枚孤立章的上半圆凸出笔身）。折角是笔锋在滚、在换向，
+     不是一摊稀释的水 —— 转锋窗口（含 `_turnHold` 的整段转向期）直接给 1.0：
+     覆盖不足也照样是墨。实测折角横末带宽 1.54（≤1.60），只改浓度不动几何。 */
+  /* 出锋段满浓度：出锋是「把墨挤出去收成尖」，是一枚枚实墨渐细，不是一层层淡雾。
+     按 per() 的 ~12%/枚算，尾巴只剩 3~4 枚孤立章 → 一片 ~15% 的灰斑粘在笔画末端
+     （用户截图折角外侧那团灰，就是横末出锋甩出去的那几枚）。 */
+  /* native 通路原来直接用 penTone（≈0.12）作单章 alpha、不走 per() 归一 ——
+     注释里的设计是「直行靠 20 层叠印才黑」。后果：宽笔的**外缘**只有 2~3 层，
+     等效 alpha ≈0.34，再被 Canvas2D 抗锯齿砍一半 → 笔画左右各留一条 1~2px 的
+     灰带（用户 2026-10-22 第二张截图，lum 停在 160 不再降；headless 桩是硬边
+     填充所以量不到，只在真浏览器可见）。
+     改法：native 也按 cover 归一（与 mouse 通路同构），单章 alpha 提到 ~0.55，
+     20 层叠到 ≈0.92，而外缘 2~3 层也有 ≈0.9 —— 边缘不再是灰的。
+     penTone 仍作为「墨浓淡」的上限参与：tone 低（墨尽）时整体仍淡。 */
+  const aE = nativePressure ? Math.min(penTone, per(0.92*tone)) : per(0.92*tone);
+  const aC = nativePressure ? 0 : per(1.00*tone);                                   // 内芯：接近饱和
+  /* 湿晕系数 0.040 → 0.020。湿晕是「灰」不是墨，叠多了整条字就发灰发水；
+     再配合 absorb 默认值 0.45→0.10，默认几乎看不见，想洇的用户自己拉滑块。 */
+  const aH = per(0.020*tone*S.absorb*P.halo);                  // 湿晕（每 2 枚画一次，故取小）
+
+  /* ---- ③ 轮廓：点数自适应 + 相位随行笔冻结 + 拖曳形变 ---- */
+  const beta = (30 + 34*Math.min(1,S.deff))*Math.PI/180;
+  const e = Math.min(0.62, Math.sin(thR)/Math.sin(beta));   // 与顶视同一封顶：纸上的笔形和面板必须一致
+  /* 轮廓点数取 SECT 的整数倍（扇区边界正好落在轮廓点上）+ 随半径自适应 */
+  const M = nativePressure ? 96 : Math.max(2, Math.min(7, Math.round(TAU*Math.max(R,Rfrom,4)/2.6/SECT)))*SECT;
+  const mo = Math.min(1, Math.max(S.vs, (S._vNow||0)*0.8)/420);   // 0=驻笔 1=行笔（瞬时速度下限：起笔加速就有行笔相位）
+  /* 拖曳量：只由速度决定，驻笔归零 → 点按仍是正圆；行笔越疾，截面越被拖长。
+     「瞬时速度下限」：拖曳目标取 max(平滑 vs, 0.8×逐事件瞬时速度) ——
+     起笔加速那几帧 vs 还没爬上来，若只认 vs，锥形起笔后会接一截正圆才出水滴；
+     真实毛笔是「带着速度落纸，第一枚就是后掠小水滴」（用户实测反馈）。 */
+  const tDragRaw = Math.max(DRAG_MAX*Math.min(1, S.vs/(W*DRAGV)),
+                            DRAG_MAX*0.8*Math.min(1, (S._vNow||0)/(W*DRAGV)));
+  if(nativePressure){
+    const gain = -Math.expm1(-Math.max(0.001,S._penDt||1/240)/0.035);
+    S._dragE = (S._dragE||0) + (tDragRaw-(S._dragE||0))*gain;
+  } else if(S._dragE === undefined || tDragRaw > S._dragE) S._dragE = tDragRaw;
+  else S._dragE = Math.max(tDragRaw, S._dragE - 0.004);
+  const tDrag = S._dragE;
+  const inCall = n>1 || dist>0.6;                          // 本帧确实在移动
+  /* dt2 场景降权：① flick；② 钩；③ **正交折**（<115°）→ 归零：拖曳截面有方向性，
+     折角处方向逐枚转动会让相邻印章外缘错开层叠成「扇贝波纹」。归零 = 正圆截面
+     = 「提笔换向」的物理。超大折向/飞跃（≥115°）不归零 —— 那是空中连带的
+     甩尾，归零反而把飞跃段削细成钢丝（实测比值 0.44 挂）。 */
+  const dt2 = inCall ? tDrag*(S.flick ? 0.4 : (S.hookOut ? 0.5 : (orthoZhe ? 0 : (1 - sm)))) : 0;
+  /* 折角窗口（正交折）内：轮廓毛刺**归零** + 相位冻结 ——
+     折角处印章密，nz 波浪让每枚印章的外缘弧各露一段 → 层叠成「扇贝波纹」；
+     毛刺归零后所有印章轮廓完全重合（正圆），边缘才是一条干净线。 */
+  const ampRaw = (0.008 + 0.042*(1-inkL))*(0.22+0.78*mo)*P.edge;   // 纸张越生，边缘越毛（0.070→0.042：字帖级利落）
+  const amp = nativePressure ? 0 : ampRaw*(1 - sm);
+  /* ph1 只随弧长：原式带 mo*S._t*1.6 的时间项，行笔时相邻印章相位差 ~0.03/帧，
+     波浪错位成「周期波纹」（每 8px 一道，正是用户对比图里的脏边）。
+     纯弧长后相邻印章相位连续，边缘是缓慢起伏的一条线。 */
+  let ph1 = S._sl*0.05, ph2 = S._sl*0.11 + 2.1;
+  if(orthoZhe){
+    if(S._turnPh === undefined) S._turnPh = ph1;
+    ph1 = S._turnPh; ph2 = 2.1;
+  } else S._turnPh = undefined;
+  const makeContour = radius => {
+    const pts = new Array(M);
+    for(let m=0;m<M;m++){
+      const u = m/M*TAU;
+      const nz = 1 + amp*(0.55*Math.sin(3*u+ph1) + 0.30*Math.sin(7*u+ph2) + 0.15*Math.sin(11*u-ph1*0.6));
+      const rr = radius*(1-e*e)/(1 - e*Math.cos(u-psiR))*nz;
+      pts[m] = dragWarp(Math.cos(u)*rr, Math.sin(u)*rr, isFinite(S._uxE)?S._uxE:S.ux, isFinite(S._uyE)?S._uyE:S.uy, dt2);
+    }
+    return pts;
+  };
+  const pts = makeContour(nativePressure ? 1 : R);
+  const lastContour = nativePressure ? S._penContour : null;
+  const connected = lastContour && Math.hypot(lastContour.x-x0,lastContour.y-y0) < 0.01;
+  const fromPts = nativePressure ? (connected ? lastContour.pts : pts.map(q=>[q[0]*Rfrom,q[1]*Rfrom])) : null;
+  const toPts = nativePressure ? pts.map(q=>[q[0]*R,q[1]*R]) : null;
+  /* 所有扇区都够湿 → 走单一路径（无扇区接缝，点按/湿笔才干净）；
+     只要有扇区开始转干 → 走逐扇区，干的不上色 = 飞白丝缕。
+     阈值与 FLY_WET1 对齐（原来是 0.24 的 DRY_CUT，与新覆盖度模型脱节：
+     新模型从 wet=0.80 就开始出丝缕，阈值必须同步，否则中段墨量永远 0% 飞白）。
+     细锋（接触毛数 < 60）例外：飞白丝缕需要「铺开的笔腹」才有意义，
+     收笔渐细 / 出锋 / 轻按这些状态下扇区里本就没几根毛，逐扇区判定会把一根
+     尖锋劈成一截一截的小短划 —— 这正是用户看到的「提笔断断续续」。 */
+  const wetAll = minWet >= FLY_WET1 || cN < 60;
+
+  /* 接触面沿笔程连续扫过：填满相邻轮廓间的条带，防止章边露出锯齿。
+     只连接湿扇区，保留真正的枯笔飞白；所有路径仍使用同一浓墨。 */
+  if(nativePressure && dist > 0.001){
+    ictx.fillStyle = 'rgba('+C_INK+','+penTone+')';
+    ictx.beginPath();
+    for(let m=0;m<M;m++){
+      if(!wetAll && !flyHit(Math.floor(m/(M/SECT)), S._sl, flyCov(wetOf(Math.floor(m/(M/SECT))), R))) continue;
+      const j = (m+1)%M;
+      ictx.moveTo(x0+fromPts[m][0],y0+fromPts[m][1]);
+      ictx.lineTo(x0+fromPts[j][0],y0+fromPts[j][1]);
+      ictx.lineTo(x1+toPts[j][0],y1+toPts[j][1]);
+      ictx.lineTo(x1+toPts[m][0],y1+toPts[m][1]);
+      ictx.closePath();
+    }
+    ictx.fill();
+  }
+  /* ---- ④ 盖印 ---- */
+  for(let s=1;s<=n;s++){
+    const t  = n===1 ? 1 : s/n;
+    /* 段内插值半径（见 dFrom 注释）：原生通路原本就插值；模拟通路补上——
+       不传 penFrom 时 dFrom===S.deff，插值退化成常量 R，普通行写行为不变。
+       0.008 下限保留（否则收笔锥度的末段会突然归零而不是渐细到亚像素）。 */
+    let stampR = nativePressure
+      ? radiusAt(dFrom + (dTo-dFrom)*t)
+      : radiusAt(Math.max(0.008, dFrom + (dTo-dFrom)*t))*tfv*carry*(zheW?zheW:1);
+
+    if(stampR <= 0) continue;
+    /* 模拟通路：这一枚章按插值半径 stampR 缩放。原来 stampScale 恒为 1、所有章
+       共用帧级 R 的 pts —— stampR 算出来却没用上，出锋/收笔的宽度就是一串
+       平台（用户截图：针尾一节节变细的珠子链，实测平台宽 13px = 一帧）。
+       原生通路走 fromPts/toPts 插值，rScale=1 行为不变。 */
+    const rScale = (!nativePressure && R > 1e-6) ? stampR/R : 1;
+    const stampScale = rScale;
+    const stampPts = nativePressure ? fromPts.map((q,m)=>[
+      q[0]+(toPts[m][0]-q[0])*t, q[1]+(toPts[m][1]-q[1])*t
+    ]) : pts;
+    const cx = x0+(x1-x0)*t - S.ux*bendA;
+    const cy = y0+(y1-y0)*t - S.uy*bendA;
+    S._sc = (S._sc||0) + 1;                               // 全局盖印计数（不用本次调用的序号，
+    /* 湿晕只在**行笔**时画：点按/起笔处印章密集，同一位置叠十几层湿晕
+       会渗出一圈灰斑（连点按都带个灰环）。驻笔把这一点的墨吃干就够了，
+       不该凭空洇出一圈水渍 —— 这条原则代码别处也写着。
+       折角窗口也跳过：折角处印章密，湿晕层叠会沿着折角外缘叠出一圈灰边
+       （转锋「不干净」的一部分）。钩（hookOut）同样跳过 —— 钩根那片浅色
+       墨块就是它叠出来的（用户截图）。 */
+    if(!nativePressure && S.absorb > 0.02 && S._sc%2===0 && inCall && !orthoZhe && !inHook){                   //  否则慢写时永远轮不到画湿晕）
+      /* 湿晕圈尺度：原先 1.18+0.30(spread-1)，生宣可达 1.31 倍笔画宽度
+         —— 视觉上「外面糊一圈灰」。压到 1.05+0.10(spread-1)，生宣约 1.07 倍。 */
+      ictx.fillStyle = 'rgba('+C_HALO+','+aH+')';
+      contourPath(cx,cy,pts,M,(1.05 + 0.10*(P.spread-1))*rScale); ictx.fill();
+    }
+    if(nativePressure && stampR < 0.5/DPR){
+      // 亚像素笔锋用像素覆盖率呈现，避免极小轮廓被栅格化直接舍成无墨。
+      // 这是一个物理像素内的点状覆盖，不绘制湿晕或扩大接触面。
+      let twiceArea=0;
+      for(let m=0;m<M;m++){
+        const a=stampPts[m], b=stampPts[(m+1)%M];
+        twiceArea+=a[0]*b[1]-b[0]*a[1];
+      }
+      const coverage=Math.min(1,Math.abs(twiceArea)*0.5*DPR*DPR);
+      const alpha=penTone>0 ? Math.max(1/255,penTone*coverage) : 0;
+      const mx=Math.floor(cx*DPR), my=Math.floor(cy*DPR), last=S._penMicro;
+      const previous=last && last.x === mx && last.y === my ? last.alpha : 0;
+      // 同一像素只补足覆盖率差额，恒定轻触不能靠反复采样累积成黑点。
+      if(alpha > previous){
+        const delta=(alpha-previous)/Math.max(1e-9,1-previous);
+        ictx.fillStyle='rgba('+C_INK+','+delta+')';
+        ictx.fillRect(mx/DPR,my/DPR,1/DPR,1/DPR);
+      }
+      S._penMicro={x:mx,y:my,alpha:Math.max(alpha,previous)};
+    } else if(wetAll){
+      ictx.fillStyle = 'rgba('+C_INK+','+aE+')';
+      contourPath(cx,cy,stampPts,M,stampScale); ictx.fill();
+      /* ---- 内芯加深（两条通路都要）----
+         原来只在 !nativePressure 时画 0.66R 内芯，原生压感（Apple Pencil）通路
+         没有 → 宽笔边缘只有单层 aE≈0.12，再被 Canvas2D 的抗锯齿砍掉一半，
+         等效 alpha ≈0.34 → 笔画左右外缘各留一条 1~2px 的灰带（用户 2026-10-22
+         第二张截图：col 3/4 与 col 10 两条 100% 半透明的竖带，lum 停在 160 不再降）。
+         headless 桩是多边形扫描线填充（硬边）所以量不到，只在真浏览器可见。
+         native 通路内芯 alpha 取 min(1, aE*2.2)：仍低于 mouse 通路的 aC（≈1.0），
+         保持压感笔「边缘略柔」的手感，但外缘不再是灰的。 */
+      if(!nativePressure){
+        ictx.fillStyle = 'rgba('+C_INK+','+aC+')';
+        contourPath(cx,cy,pts,M,0.66*rScale); ictx.fill();
+      } else {
+        ictx.fillStyle = 'rgba('+C_INK+','+Math.min(1, aE*2.2)+')';
+        contourPath(cx,cy,stampPts,M,0.66*stampScale); ictx.fill();
+      }
+    } else {
+      const perM = M/SECT;
+      for(let k=0;k<SECT;k++){
+        const wet = wetOf(k);
+        /* 飞白是「干点」，不是「变淡」—— 这是 §6 的核心命题。
+           旧写法把 wet 直接乘进 alpha（per(0.70·tone·wet)），
+           于是半干的扇区画成灰色 → 整条字看着像被水稀释过。
+           正确做法：wet 只决定「这块有没有墨」，
+           有墨就照满浓度画（wet 只留 10% 的微调作过渡），没墨就整块露白。 */
+        if(!flyHit(k, S._sl, flyCov(wet, stampR))) continue;       // 枯 → 按覆盖度露纸白（飞白丝缕）
+        ictx.fillStyle = 'rgba('+C_INK+','+(nativePressure ? penTone : per(tone*(0.90 + 0.10*wet)))+')';
+        ictx.beginPath(); ictx.moveTo(cx,cy);
+        for(let j=0;j<=perM;j++){ const q = stampPts[(k*perM+j)%M]; ictx.lineTo(cx+q[0]*rScale, cy+q[1]*rScale); }
+        ictx.closePath(); ictx.fill();
+      }
+    }
+  }
+  S._lastR = R;
+  S._lastA = aE;
+  if(nativePressure){
+    S._penStampedD = S.deff;
+    S._penContour = {x:x1,y:y1,pts:toPts};
+    if(aE > 0) S.hasInk = true;
+  }
+
+  /* ---- ⑤ 逐毛笔尖含墨量：行笔耗干 + 笔腹缓慢补给 ---- */
+  for(let i=0;i<B.length;i++){
+    const b = B[i];
+    if(!b.contact) continue;
+    const want = S.ink*b.cap*(0.60 + 0.80*b.seed);
+    b.ink += (want - b.ink)*Math.min(1, dist*0.012);
+    b.ink = Math.max(0, b.ink - dist*0.00040*P.drain*(0.30+S.D)*(0.45+1.15*b.seed));
+  }
+  /* 笔腹耗墨 0.00030 → 0.00022：原先约 5,500px 笔程（≈40 笔）就见底，
+     真实毛笔蘸一次能写几十到上百笔。放宽到约 7,500px。 */
+  if(dist > 0.2){ S.ink = Math.max(0, S.ink - dist*0.00022*P.drain*(0.35+S.D)); S.hasInk = true; }
+}
+/* 蘸墨：笔腹与全部笔毛重新饱和 */
+function dipInk(){
+  S.ink = 1; $('s-ink').value = 1;
+  for(let i=0;i<B.length;i++){ const b=B[i]; b.ink = Math.max(b.ink, b.cap*(0.60 + 0.80*b.seed)); }
+}
+
+/* §7 描红中轴 —— 「变宽度的居中轴」= 字帖 + 理想提按曲线二合一。
+   d(s) 越大的地方轴越粗 → 那里该按得越重；反之该提起来走。 */
+function drawCalGuide(spec){
+  const M = 96;
+  const path = spec.path;
+  /* 1) 先把折线中轴按弧长参数化，方便按 s 取点 */
+  const seg = [], acc = [0];
+  for(let i=0;i<path.length-1;i++){
+    const a=[pxX(path[i][0]), pxY(path[i][1])], b=[pxX(path[i+1][0]), pxY(path[i+1][1])];
+    const L = Math.hypot(b[0]-a[0], b[1]-a[1]);
+    seg.push([a,b,L]); acc.push(acc[acc.length-1]+L);
+  }
+  const total = acc[acc.length-1];
+  if(total < 1) return;
+  const at = function(s){
+    const target = total*s;
+    let k=1; while(k<seg.length && acc[k] < target) k++;
+    const s0=seg[k-1], off=target-acc[k-1];
+    const u = s0[2] > 1e-9 ? off/s0[2] : 0;
+    return [ s0[0][0]+(s0[1][0]-s0[0][0])*u, s0[0][1]+(s0[1][1]-s0[0][1])*u ];
+  };
+  pctx.save();
+  /* 2) 轴向量的法线 → 把宽度画成一条闭合的「变宽带」 */
+  const half = s => (5 + 21*Math.min(1, catD(spec.d, s)))*(W/REF);
+  for(let i=0;i<M;i++){
+    const s0 = i/M, s1 = (i+1)/M;
+    const p0 = at(s0), p1 = at(s1);
+    const dx = p1[0]-p0[0], dy = p1[1]-p0[1], L = Math.hypot(dx,dy) || 1;
+    const nx = -dy/L, ny = dx/L;
+    const h0 = half(s0), h1 = half(s1);
+    pctx.beginPath();
+    pctx.moveTo(p0[0]+nx*h0, p0[1]+ny*h0);
+    pctx.lineTo(p1[0]+nx*h1, p1[1]+ny*h1);
+    pctx.lineTo(p1[0]-nx*h1, p1[1]-ny*h1);
+    pctx.lineTo(p0[0]-nx*h0, p0[1]-ny*h0);
+    pctx.closePath();
+    pctx.fillStyle = 'rgba(168,52,42,'+(0.10 + 0.10*(i/M))+')';
+    pctx.fill();
+  }
+  /* 3) 起笔点：朱砂实心圆 + 名称 */
+  const st = at(0);
+  pctx.beginPath(); pctx.arc(st[0], st[1], 5.5, 0, 6.2832);
+  pctx.fillStyle = 'rgba(168,52,42,.85)'; pctx.fill();
+  /* 4) 收笔方向箭头 */
+  const e0 = at(0.90), e1 = at(1);
+  const ang = Math.atan2(e1[1]-e0[1], e1[0]-e0[0]);
+  pctx.save();
+  pctx.translate(e1[0], e1[1]); pctx.rotate(ang);
+  pctx.beginPath(); pctx.moveTo(0,0); pctx.lineTo(-11,-5.5); pctx.lineTo(-11,5.5);
+  pctx.closePath(); pctx.fillStyle='rgba(168,52,42,.85)'; pctx.fill();
+  pctx.restore();
+  /* 5) 笔画名 + 提示 */
+  pctx.font = '600 ' + Math.round(15*(W/REF)) + 'px KaiTi, STKaiti, serif';
+  pctx.textAlign='center'; pctx.fillStyle='rgba(168,52,42,.80)';
+  pctx.fillText(spec.name, st[0], st[1]-18);
+  pctx.font = Math.round(11.5*(W/REF))+'px system-ui, sans-serif';
+  pctx.fillStyle='rgba(27,24,20,.42)';
+  pctx.fillText(spec.hint, W/2, H-14);
+  pctx.restore();
+}
+
+/* =========================================================
+   7. 渲染：纸面
+   ========================================================= */
+function render(){
+  pctx.clearRect(0,0,W,H);
+  pctx.drawImage(texCv,0,0,W,H);
+  pctx.drawImage(inkCv,0,0,W,H);
+
+  if(demo && demo.kind==='compare'){        // 对比演示的标签
+    pctx.save();
+    pctx.font = '15px KaiTi, STKaiti, serif';
+    pctx.fillStyle = 'rgba(27,24,20,.30)'; pctx.textAlign='center';
+    pctx.fillText('按笔硬折', pxX(0.30), pxY(0.16));
+    pctx.fillText('提笔折锋', pxX(0.72), pxY(0.16));
+    pctx.restore();
+  }
+  /* §7 描红中轴：宽度 = 理想提按 d(s)，所以这条轴本身就是一张「字帖」——
+     既告诉用户往哪走，也告诉他这一段该按多深（宽=重，窄=轻）。
+     起笔点用朱砂圆点标出，收笔方向用箭头标出。 */
+  if(cal.active && cal.key && STROKES[cal.key]){
+    drawCalGuide(STROKES[cal.key]);
+  }
+  /* 悬停时的笔尖位置提示：只在「没有在写」时显示，且用中性灰虚线环。
+     绝不画在墨迹上、绝不用朱砂色 —— 朱砂在本台只表示摩擦/滑移量。 */
+  if(!S.drawing && !demo){
+    pctx.save();
+    pctx.strokeStyle='rgba(27,24,20,.16)'; pctx.lineWidth=1; pctx.setLineDash([2,3]);
+    pctx.beginPath(); pctx.arc(S.x,S.y,4,0,6.2832); pctx.stroke();
+    pctx.setLineDash([]); pctx.restore();
+  }
+}
+
+/* =========================================================
+   8. 渲染：笔尖顶视 + 侧视
+   ========================================================= */
+function drawTip(){
+  const w = tipCv.width/DPR, h = 152;
+  const ctx = tipCtx;
+  ctx.clearRect(0,0,w,h);
+  const mat = MATS[S.mat];
+  const phiR = S.phi*Math.PI/180;
+  const splay = mat.splay*(1 - 0.24*Math.min(1, Math.abs(S.phi)/95));
+  const psiR = S.psi*Math.PI/180;
+  /* 与落墨用同一套圆锥曲线参数，顶视截面才不会和纸上的墨迹方向相反 */
+  const thR0 = Math.min(70,S.theta)*Math.PI/180;
+  const beta0 = (30 + 34*Math.min(1,S.deff))/180*Math.PI;
+  const e0 = Math.min(0.62, Math.sin(thR0)/Math.sin(beta0));   // 离心率封顶 0.62（原 0.78 → 拉长 1.78 倍，分叉观感的另一半）
+
+  /* --- 顶视 --- */
+  const cx = Math.min(86, w*0.26), cy = h*0.52, R = 38;
+  /* 与落墨同一套形变：拖曳时截面被拖成后曳的泪滴形 —— 顶视图必须和纸面对得上 */
+  const tDragV = DRAG_MAX*Math.min(1, S.vs/(W*DRAGV));
+  ctx.save();
+  ctx.fillStyle='rgba(27,24,20,.035)';
+  ctx.beginPath(); ctx.arc(cx,cy,R*1.18,0,6.2832); ctx.fill();
+  ctx.strokeStyle='rgba(27,24,20,.13)'; ctx.lineWidth=0.5; ctx.setLineDash([2,3]);
+  ctx.beginPath(); ctx.arc(cx,cy,R*1.18,0,6.2832); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='rgba(27,24,20,.30)';
+  ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(tDragV>0.06 ? '顶视 · 落纸截面（被拖曳）' : '顶视 · 落纸截面', cx, cy+R*1.18+16);
+  /* 行笔方向箭头：让人看出「拖」是往哪边拖的 */
+  if(tDragV>0.06){
+    ctx.strokeStyle='rgba(27,24,20,.28)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(cx-S.ux*R*1.55, cy-S.uy*R*1.55);
+    ctx.lineTo(cx-S.ux*R*1.05, cy-S.uy*R*1.05); ctx.stroke();
+  }
+  for(let i=0;i<B.length;i++){
+    const b=B[i];
+    const ang = b.a + phiR - b.lag + b.mem*0.5;
+    const rr  = b.r*splay*R*(0.72+0.30*Math.min(1,b.pen*2.4))*(1-e0*e0)/(1 - e0*Math.cos(ang-psiR));   // 铺毫封顶≈1.0×（原 0.55+0.85=1.40×，深按直接甩出接触圈）
+    const wx = Math.cos(ang)*rr, wy = Math.sin(ang)*rr;
+    const d2 = dragWarp(wx, wy, isFinite(S._uxE)?S._uxE:S.ux, isFinite(S._uyE)?S._uyE:S.uy, tDragV);   // 顶视与纸面同一坐标系，不翻转
+    const x = cx+d2[0], y = cy+d2[1];
+    const rad = 1.35 + 1.0*(1-b.r);
+    /* 填充色 = 毛料（一眼看出「内部是狼毫、外圈是羊毫」）
+       描边色 = 接触状态（朱砂仍只表示滑移） */
+    let fill, stroke, lw = 0.5;
+    if(!b.contact){ fill = b.tintOff; stroke = 'rgba(27,24,20,.10)'; }
+    else if(b.slip){ fill = b.tint; stroke = '#A8342A'; lw = 0.9; }
+    else           { fill = b.tint; stroke = 'rgba(27,24,20,.5)'; }
+    ctx.fillStyle=fill; ctx.strokeStyle=stroke; ctx.lineWidth=lw;
+    ctx.beginPath(); ctx.arc(x,y,rad,0,6.2832); ctx.fill(); ctx.stroke();
+  }
+  /* 分层分界圈：让人看清笔柱 / 被毫的边界 */
+  ctx.strokeStyle='rgba(27,24,20,.16)'; ctx.lineWidth=0.5; ctx.setLineDash([1,2]);
+  ctx.beginPath(); ctx.arc(cx,cy,Math.max(3,CORE_R*R*splay*1.05),0,6.2832); ctx.stroke();
+  ctx.setLineDash([]);
+  /* 笔杆转动方向 + 扭矩大小 —— 只在真转时画：
+     autoPhi（演示自动转）或用户 φ 确实离开 0。之前无条件画，没转笔也顶一圈红箭头。 */
+  if(S.autoPhi || Math.abs(S.phi) > 2){
+    const dir = S.autoPhi ? Math.cos(S._t*2*Math.PI*S.phiHz) : (S.phi>0?1:-1);
+    ctx.strokeStyle='rgba(168,52,42,.75)'; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.arc(cx,cy,R*1.42, -0.9, 0.9, dir<0);
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(cx+R*1.42*Math.cos(0.9), cy+R*1.42*Math.sin(0.9));
+    ctx.rotate(dir<0?-0.6:2.4);
+    ctx.fillStyle='rgba(168,52,42,.85)';
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-4,-3); ctx.lineTo(-4,3); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  /* --- 侧视 --- */
+  const rx = Math.min(210, w*0.62), baseY = h*0.80, Lp = 54;
+  const tanT = Math.tan(Math.min(70,S.theta)*Math.PI/180);
+  ctx.strokeStyle='rgba(27,24,20,.35)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(rx-58,baseY); ctx.lineTo(rx+110,baseY); ctx.stroke();
+  ctx.fillStyle='rgba(27,24,20,.30)'; ctx.font='11px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('侧视 · 压力/倾角', rx-58, h-6);
+
+  // 笔杆：沿倾角倾斜
+  const lean = Math.min(1, S.theta/70);
+  const bodyTopX = rx - 92*lean*Math.sin(1.0), bodyTopY = baseY - Lp - 26 + S.D*10;
+  const bodyBotX = rx - S.D*14*lean, bodyBotY = baseY - Lp + S.D*Lp*1.05;
+  ctx.strokeStyle='#4A443C'; ctx.lineWidth=2.4; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(bodyTopX,bodyTopY); ctx.lineTo(bodyBotX,bodyBotY); ctx.stroke();
+  ctx.fillStyle='rgba(27,24,20,.9)';
+  ctx.beginPath(); ctx.arc(bodyTopX,bodyTopY,3.2,0,6.2832); ctx.fill();
+
+  // 代表毛：中心笔柱 / 中圈 / 外圈近侧 / 外圈远侧（颜色按毛料）
+  const reps = [[0,0],[0.68,-1],[1,-1],[1,1]];
+  const layA = MATS[S.mat].layers;
+  for(let i=0;i<reps.length;i++){
+    const b = B[0];
+    const r = reps[i][0], side = reps[i][1];
+    const pen = S.deff - 0.30*r + 0.34*r*tanT*side;
+    const k = 0.70+0.30*r;
+    const h = HAIR[layA[r<=CORE_R?0:1]];
+    const f = pen>0 ? pen*k*h.EI*1.6 : 0;
+    const slip = pen>0 && mat.mu*PAPERS[S.paper].mu*f*r*FR > (h.EI*mat.kTor+PACK)*k*r*r*KT*0.22;
+    const tipY = pen>0 ? baseY - 0.5 : baseY + pen*46;
+    const tipX = bodyBotX + side*(9+17*r)*splay*0.62 + Math.sin(S.phi*Math.PI/180)*r*9;   // 侧视铺开收敛：26px/侧→17px，别开成喇叭花
+    const col = pen>0 ? (slip?'#A8342A':h.tint) : '#CFC9BC';
+    ctx.strokeStyle = col; ctx.lineWidth = pen>0?1.7:1.1;
+    ctx.beginPath();
+    ctx.moveTo(bodyBotX + side*r*3, bodyBotY);
+    ctx.quadraticCurveTo(bodyBotX + side*(6+14*r), baseY-8, tipX, tipY);
+    ctx.stroke();
+  }
+  // 压深标注（石青：朱砂在本台只留给摩擦/滑移，压深是几何量）
+  ctx.strokeStyle='rgba(42,96,118,.55)'; ctx.lineWidth=0.5; ctx.setLineDash([2,2]);
+  ctx.beginPath(); ctx.moveTo(rx+96,baseY); ctx.lineTo(rx+96,baseY - S.D*Lp*0.5); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='rgba(42,96,118,.85)'; ctx.font='10px monospace';
+  ctx.fillText('d='+S.D.toFixed(2), rx+74, baseY - S.D*Lp*0.5 - 3);
+}
+
+/* =========================================================
+   9. 渲染：迟滞回环
+   ========================================================= */
+let ymax = 60;
+function drawChart(){
+  const w = chartCv.width/DPR, h = 172, ctx = chartCtx;
+  ctx.clearRect(0,0,w,h);
+  const padL = 34, padR = 12, padT = 14, padB = 22;
+  const gw = w-padL-padR, gh = h-padT-padB;
+
+  if(S.chartTab==='tor'){
+    const amp = Math.max(12, S.autoPhi ? S.phiAmp : 90);
+    const xmax = amp*1.06;
+    let m = 8; for(let i=0;i<S.traceT.length;i++) m = Math.max(m, Math.abs(S.traceT[i][1]));
+    ymax += (Math.max(12, m*1.12) - ymax)*0.08;
+    const X = p => padL + (p + xmax)/(2*xmax)*gw;
+    const Y = v => padT + gh*0.5 - (v/ymax)*(gh*0.5);
+    drawGrid(ctx,padL,padT,gw,gh);
+    ctx.strokeStyle='rgba(27,24,20,.20)'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(padL,Y(0)); ctx.lineTo(padL+gw,Y(0)); ctx.stroke();
+    // 回环描迹：朱砂=前进段，石青=回程段，一眼看出回环宽度
+    for(let pass=0;pass<2;pass++){
+      ctx.strokeStyle = pass===0 ? '#A8342A' : '#2A6076';
+      ctx.lineWidth = 1.6; ctx.lineJoin='round';
+      ctx.beginPath();
+      let started=false;
+      for(let i=1;i<S.traceT.length;i++){
+        const a=S.traceT[i-1], c=S.traceT[i];
+        const inc = c[0] >= a[0];
+        if((pass===0) !== inc){ if(started) ctx.stroke(); ctx.beginPath(); started=false; continue; }
+        if(!started){ ctx.moveTo(X(a[0]),Y(a[1])); started=true; }
+        ctx.lineTo(X(c[0]),Y(c[1]));
+      }
+      ctx.stroke();
+    }
+    const lp = S.traceT.length? S.traceT[S.traceT.length-1] : [0,0];
+    ctx.fillStyle='#1B1814';
+    ctx.beginPath(); ctx.arc(X(lp[0]),Y(lp[1]),3,0,6.2832); ctx.fill();
+    ctx.strokeStyle='rgba(27,24,20,.12)'; ctx.lineWidth=0.5; ctx.setLineDash([2,3]);
+    ctx.beginPath(); ctx.moveTo(padL,Y(lp[1])); ctx.lineTo(X(lp[0]),Y(lp[1])); ctx.lineTo(X(lp[0]),padT+gh); ctx.stroke(); ctx.setLineDash([]);
+    axisLabels(ctx,padL,padT,gw,gh,'转角 φ (°)','阻力 T', xmax, -xmax, ymax);
+  } else {
+    const xmax = 1.22;
+    let m = 10; for(let i=0;i<S.traceP.length;i++) m = Math.max(m, S.traceP[i][1]);
+    ymax += (Math.max(20, m*1.12) - ymax)*0.08;
+    const X = v => padL + Math.min(1,v/xmax)*gw;
+    const Y = v => padT + gh - (v/ymax)*gh;
+    drawGrid(ctx,padL,padT,gw,gh);
+    ctx.beginPath();
+    for(let i=0;i<S.traceP.length;i++){
+      const p=S.traceP[i];
+      if(i===0) ctx.moveTo(X(p[0]),Y(p[1])); else ctx.lineTo(X(p[0]),Y(p[1]));
+    }
+    ctx.strokeStyle='#2A6076'; ctx.lineWidth=1.6; ctx.lineJoin='round'; ctx.stroke();
+    axisLabels(ctx,padL,padT,gw,gh,'压深 d','压力 N', xmax, 0, ymax);
+  }
+}
+function drawGrid(ctx,padL,padT,gw,gh){
+  ctx.strokeStyle='rgba(27,24,20,.07)'; ctx.lineWidth=0.5;
+  for(let i=0;i<=4;i++){
+    const y=padT+gh*i/4; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+gw,y); ctx.stroke();
+  }
+  for(let i=0;i<=4;i++){
+    const x=padL+gw*i/4; ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+gh); ctx.stroke();
+  }
+}
+function axisLabels(ctx,padL,padT,gw,gh,xl,yl,xr,x0,yM){
+  ctx.fillStyle='rgba(27,24,20,.45)'; ctx.font='10px monospace'; ctx.textAlign='right';
+  ctx.fillText(Math.round(yM), padL-5, padT+9);
+  ctx.fillText('0', padL-5, padT+gh*0.5+3);
+  ctx.fillText('-'+Math.round(yM), padL-5, padT+gh-1);
+  ctx.textAlign='center';
+  ctx.fillText(Math.round(x0), padL, padT+gh+14);
+  ctx.fillText('0', padL+gw*0.5, padT+gh+14);
+  ctx.fillText(Math.round(xr), padL+gw, padT+gh+14);
+  ctx.fillStyle='rgba(27,24,20,.35)'; ctx.textAlign='left';
+  ctx.fillText(xl, padL, padT-3);
+  ctx.textAlign='right'; ctx.fillText(yl, padL+gw, padT-3);
+}
+
+/* =========================================================
+   10. 演示播放器
+   ========================================================= */
+let demo = null;
+const R = (t,x,y,d,th,ph) => [t,x,y,d,th,ph];
+
+function buildStrokes(kind){
+  if(kind==='zhe'){
+    return [{dur:3.6, kf:[
+      R(0.00,0.34,0.155,0.16,30,0),
+      R(0.16,0.26,0.152,0.34,34,0),
+      R(0.34,0.50,0.150,0.48,38,0),
+      R(0.46,0.70,0.150,0.56,42,0),
+      R(0.53,0.782,0.170,0.92,54,-4),
+      R(0.58,0.800,0.250,0.95,60,-20),
+      R(0.72,0.798,0.600,0.54,46,-22),
+      R(0.79,0.796,0.700,0.96,48,-18),
+      R(0.83,0.788,0.680,1.02,50,6),
+      R(0.88,0.760,0.640,0.30,42,28),
+      R(1.00,0.640,0.580,0.06,34,50)
+    ]}];
+  }
+  if(kind==='zhuan'){
+    const kf = [], N = 28;
+    for(let i=0;i<=N;i++){
+      const t=i/N, ang=(-158 + t*238)*Math.PI/180;
+      kf.push(R(t, 0.50+Math.cos(ang)*0.265, 0.50+Math.sin(ang)*0.265,
+                0.50+0.05*Math.sin(t*6.0), 34, -58*t));
+    }
+    return [{dur:6.0, kf:kf}];
+  }
+  /* compare：同一转角，两种技法 */
+  return [
+    {dur:2.5, kf:[
+      R(0.00,0.11,0.300,0.24,32,0),
+      R(0.30,0.34,0.296,0.44,36,0),
+      R(0.46,0.420,0.300,0.88,50,-3),
+      R(0.56,0.436,0.420,0.98,58,-40),
+      R(1.00,0.432,0.760,0.50,44,-40)
+    ]},
+    {dur:2.5, kf:[
+      R(0.00,0.57,0.300,0.24,32,0),
+      R(0.28,0.80,0.296,0.44,36,0),
+      R(0.42,0.868,0.300,0.20,34,0),
+      R(0.50,0.876,0.330,0.22,32,-20),
+      R(0.58,0.880,0.420,0.20,30,-40),
+      R(0.68,0.878,0.480,0.88,50,-40),
+      R(1.00,0.874,0.760,0.50,44,-40)
+    ]}
+  ];
+}
+function sampleKF(kf,t){
+  let i=1; while(i<kf.length-1 && kf[i][0]<t) i++;
+  const a=kf[i-1], b=kf[i];
+  const span = Math.max(1e-6, b[0]-a[0]);
+  let u = Math.min(1, Math.max(0,(t-a[0])/span));
+  u = u*u*(3-2*u);
+  const L=(x,y)=>x+(y-x)*u;
+  return { x:L(a[1],b[1]), y:L(a[2],b[2]), d:L(a[3],b[3]), th:L(a[4],b[4]), ph:L(a[5],b[5]) };
+}
+function startDemo(kind){
+  demo = { kind:kind, strokes:buildStrokes(kind), si:0, t:0, pause:0, first:true };
+  clearInk(); S.stats=[]; renderStats(); S.traceT=[]; S.traceP=[];
+  S._peak=0; S._strokeE=0; S.ink=1; setSlider('s-ink',1);
+  S.phiPrev=0; S.loopAcc=0; S.lastLoop=0;
+  for(let i=0;i<B.length;i++){ B[i].lag=0; B[i].mem=0; B[i]._wasC=false; }   // 演示从头开始，清掉上一状态的残余滞后
+  S._sl = 0; S.touchT = TOUCH; S.liftT = 0;
+  S.touchL = Math.max(4, 0.8*bodyRadiusHint());   // 起笔渐入的弧长预算（按笔宽）
+  S.dotAcc=0; S.bleedN=0; S.stamp0=false; S.vAcc=0; S.vs=0; S.liftAmt=0; S._sc=0;
+  const st = demo.strokes[0].kf[0];
+  S.x=S.px=pxX(st[1]); S.y=S.py=pxY(st[2]);
+}
+function updateDemo(dt){
+  if(!demo) return;
+  if(demo.pause>0){
+    demo.pause -= dt; S.drawing=false;
+    if(demo.pause<=0){
+      demo.si++;
+      if(demo.si>=demo.strokes.length){
+        demo=null;
+        /* 演示会把 θ 停在侧锋值；收工后回到中锋，免得之后手写全是椭圆 */
+        if(S.autoTilt && !S._penSeen){ S.theta=0; setSlider('s-th',0); }
+        return;
+      }
+      demo.t=0; demo.first=true;
+      S._peak=0; S._strokeE=0;              // 每笔重新计量
+      S._sl=0; S.touchT=TOUCH;              // 新笔：线段链从头开始
+      S.liftT=0;                            // 取消上一笔的提笔回弹，否则新笔起手被压成发丝
+      S.dotAcc=0; S.bleedN=0; S.stamp0=false; S.vAcc=0; S.vs=0; S.liftAmt=0;
+      const st=demo.strokes[demo.si].kf[0];
+      S.x=S.px=pxX(st[1]); S.y=S.py=pxY(st[2]);
+    }
+    return;
+  }
+  const st = demo.strokes[demo.si];
+  demo.t += dt/st.dur;
+  if(demo.t>=1){
+    S.drawing=false; endStroke();
+    demo.pause=0.30; S.liftT=LIFT; demo.t=0.999;
+    return;
+  }
+  const v = sampleKF(st.kf, demo.t);
+  const nx = pxX(v.x), ny = pxY(v.y);
+  S.v = Math.hypot(nx-S.px, ny-S.py);
+  S.vAcc += S.v;
+  if(S.v>0.001){ S.ux=(nx-S.px)/S.v; S.uy=(ny-S.py)/S.v; }
+  S.px=S.x; S.py=S.y; S.x=nx; S.y=ny;
+  S.D=v.d; S.theta=v.th; S.phiDemo=v.ph;
+  setSlider('s-d',v.d); setSlider('s-th',v.th);
+  S.drawing = demo.t>0.005;
+}
+function endStroke(){
+  /* 记下这一笔的末端（位置 / 体宽 / 末段方向 / 时刻）——
+     下一笔起手时用它判断「这是新起笔，还是同一动作的延续」。
+     典型场景：竖钩的「趯」—— 竖到底顿住会触发自动收锋把笔画结束，
+     趯于是成了新的一笔；若不识别，它会被当成新起笔，吃入笔锥度 → 钩根细成一片叶子。 */
+  S._prevEnd = { x:S.x, y:S.y, r:(S._wN ? S._wSum/Math.max(1,S._wN) : 20),
+                 ux:(S.ux||0), uy:(S.uy||0), t:performance.now()/1000 };
+  if(S._peak>2) S.stats.unshift({ i:++S.counter, peak:Math.round(S._peak), e:Math.round(S._strokeE||0) });
+  S.stats = S.stats.slice(0,4);
+  renderStats();
+}
+
+/* =========================================================
+   10.4 行笔前瞻：墨迹延迟生成 + 转折预判
+   ---- 为什么要延迟 ----
+   真实书写到转折处不是瞬间改向：会先「顿」（减速、加压）再转，楷书的折画
+   因此有个方硬的「肩」。若墨迹跟着指针即时生成，系统只能在「已经转过去了」
+   之后才反应，永远慢半拍 —— 棱角/顿肩根本做不出来。
+   让墨迹比指针晚 INK_DELAY 秒落纸，就有了一个小的时间窗：
+   先看到后面几个采样点往哪走，再决定当前这一段落多深。
+   ---- 判据 ----
+   取队列里后续若干个采样段，累积它们的方向变化：
+     |ΣΔθ| > 0.85 rad（≈49°）→ 折锋（硬折）→ 先顿出肩
+     0.30 ~ 0.85          → 圆转        → 略顿，平滑带过
+     < 0.30               → 直行        → 不动压深
+   延迟量取 55 ms：够前瞻 3~6 个采样点，又不到被眼睛察觉为「拖影」的程度。
+   ========================================================= */
+const INK_DELAY = 0.060;                 // 秒（≈3.6 帧 @60fps）
+const inkQ = [];                         // 待落墨的段：{x0,y0,x1,y1,t}
+/* 轨迹方向缓冲：最近若干段的朝向（rad）。
+   **不能只看 inkQ** —— 队列会被 flush 清空，60 fps 下常常只剩 1 段，
+   `length<2` 直接返回 0，转折永远识别不出来（实测峰值只有 1.05）。
+   trail 独立于落墨：既含「已落墨的过去」，尾部又是「尚未落墨的未来」，
+   当前落墨点滞后 trail 尾部 INK_DELAY，所以尾部对当前段而言就是前瞻。 */
+const trail = [];
+const nowSec = () => performance.now()/1000;
+
+/* =========================================================
+   前向收/起笔锥度（替代「压住队尾再回头改写」）
+   旧做法把队尾压住 2.4 个笔宽（≈100ms）以便回头写锥度 —— 代价是墨迹明显掉队，
+   慢写时成批追上来，看着「一顿一顿」。现在改成前向判据：段在落纸前就把自己的
+   宽度因子算好随段存起来，队尾因此只需留约半个笔宽（≈10px），墨迹几乎实时：
+     · 起笔渐入：入笔由细到粗（真实笔尖先着锋尖、再渐按）—— 用户明确要求
+     · 收笔渐出：速度掉到本笔峰值 45% 以下 = 进入收笔，沿弧长收到尖；
+                速度回到峰值 80% 以上 = 撤销（那只是途中顿挫）；
+                若收笔段超过 1.5×锥长还在写 → 判错了（不是收笔），缓缓恢复
+     · 封顶：收笔段不许超过收笔起点当时的笔压与拖曳量（防止鼓蝌蚪肚）
+   ========================================================= */
+function bodyRadiusHint(){ return S._wN ? (S._wSum/Math.max(1,S._wN)) : 20; }
+function updateTaper(dist, vOv){
+  /* tNow/dtm 提前算：停笔检测（物理模式）与起笔截面预置（两模式共用）都要用 */
+  const tNow = performance.now()/1000;
+  const dtm = Math.max(1e-3, tNow - (S._tPrev === undefined ? tNow : S._tPrev));
+  S._tPrev = tNow;
+  /* Procreate 模式：Touch Taper 起笔包络，收笔/回锋/趯/折肩那套物理形态全跳过。
+     但保留起笔截面后掠预置（_dragE）—— 那是「笔带着速度落纸」的截面语言，
+     两模式通用；Procreate 的 Tip 参数也在管这件事。 */
+  if(S.engine !== 'physics'){
+    if(S._dragE === undefined && S.strokeLen < 0.03*W){
+      const vNow = (vOv === undefined) ? dist/Math.max(1e-3, dtm) : vOv;
+      S._vNow = vNow;                                       // 拖曳形变的瞬时速度驱动（两模式共用）
+      S._dragE = Math.max(DRAG_MAX*Math.min(1, S.vs/(W*DRAGV)),
+                          DRAG_MAX*0.55*Math.min(1, vNow/(W*0.20)));
+    }
+    return pcTaper(dist);
+  }
+  const Rb = bodyRadiusHint();
+  const dragNow = DRAG_MAX*Math.min(1, S.vs/(W*DRAGV));
+  /* ---- 中途停笔（顿笔 / 卡顿）检测 ----
+     事件间隔 > 0.15s = 笔真的停过。收笔锥度（tapOn）、速度峰值基准（_vTop）、
+     回锋/趯状态全部只对「连续运笔」成立 —— 停顿后继续写时若不作废，
+     旧峰值会把恢复期误判成收笔，字迹卡在细状态回不来（用户实测 bug：
+     「会卡出来字迹后续不会再变粗」）。收笔的唯一成立条件是「抬笔」，
+     没抬笔的减速只是顿，顿完笔就该回到当前按压的宽度。
+     （tNow / dtm 已在本函数开头算过 —— 开头还要用它们做起笔截面预置。） */
+  if(dtm > 0.15 && S.strokeLen > 0.03*W){
+    S._vTop = 0; S.tapOn = false; S.tapS = 0;
+    S.huiFeng = false; S.hookOut = false; S.revAt = undefined;
+    S._dragE = undefined;
+    if(S.liftAmt > 0.02) S.liftAmt = 0;   // 兜底：idleT 长不大的路径（回锋挡住 autoLift 等）在这里直接清零
+  }
+  /* 转弯锁存解除：书写者在新方向重新提速到峰值 80% 以上 = 他是在行进，
+     不是收笔 —— 此后这一笔自己的减速才重新算收笔。 */
+  if(S._turnLatch && S.vs > 0.80*(S._vTop||0)) S._turnLatch = false;
+  S._vTop = Math.max(S._vTop||0, S.vs);
+  if(S.strokeLen > 0.03*W){
+    if(!S.tapOn && !S._turnLatch && S._vTop > W*0.15 && S.vs < 0.45*S._vTop){
+      S.tapOn = true; S.tapS = 0;                       // 进入收笔
+      S.tapL = Math.max(S.taperLen, 2.4*Rb);
+      S.tapD = S.deff; S.tapDrag = dragNow;             // 记下起点的笔压/拖曳 → 封顶基准
+    } else if(S.tapOn && S.vs > 0.80*S._vTop){
+      S.tapOn = false; S.tapS = 0;                      // 速度回来了 → 不是收笔
+    }
+    /* ---- 飞跃连带保护（用户实测钢丝）----
+       一笔之内的「抬起 → 飞跃 → 放下」：竖尾减速会误触发 tapOn，
+       紧接着的大幅折向又被掉头检测（>126°）误判成回锋/趔 ——
+       huiFeng/hookOut 于是把飞跃段和后续全程钉死在 0.10 发丝上
+       （实测宽度 59 → 6px，截图里那根钢丝）。
+       区分判据：回锋/趔是**低速形态**（挑完就抬，高速只持续一两段），
+       飞跃是**持续高速行进**。vs 连续 ≥3 段超过峰值 70% 即判定为连带：
+       作废形态判定；hookOut 不硬撤销（宽度跳变），把 revAt 拨到过期
+       斜坡起点，宽度在 2×体宽内从 0.10 平滑还给体宽。
+       两道保险：① revD > 2.2×体宽才救 —— 钩 taper 没走完的是真趔，不动；
+                 ② _flyRev 一次性标记 —— vs 在阈值附近抖动时会反复重拨
+                   revAt，斜坡永远被打回起点（实测锁死在 0.33~0.62）。 */
+    if((S.huiFeng || S.hookOut) && !S._flyRev && S.revAt !== undefined
+       && S.strokeLen - S.revAt > 2.2*bodyRadiusHint()
+       && S.vs > 0.70*(S._vTop||0)){
+      S._hiVsN = (S._hiVsN||0) + 1;
+      if(S._hiVsN >= 3){
+        S.huiFeng = false;
+        if(S.hookOut) S.revAt = S.strokeLen - 6.5*bodyRadiusHint();
+        S._flyRev = true; S._hiVsN = 0;
+      }
+    } else if(!S.huiFeng && !S.hookOut) S._flyRev = false;   // 形态已清 → 标记复位，下次可再救
+    else S._hiVsN = 0;
+  }
+  if(S.tapOn){
+    S.tapS += dist;
+    if(S.tapS > 4.0*S.tapL){ S.tapOn = false; S.tapS = 0; }   // 收笔段长得离谱 → 判错了，撤销
+  }
+  /* 起笔渐入（由细到粗）——但**锥度深浅由入笔速度决定**：
+       快速入纸 → 出尖（起笔有锋）；慢慢按下去 → 那是「顿」不是尖，宽度不动。
+       否则「点」会被削成小圆头（点按没有速度，不该有入笔锥度）。 */
+  const Lin = Math.max(9, 1.8*Rb);   // 2.2→1.8：锥段更紧凑，「点-颈-身」过渡更快（用户对比字帖：起笔不该拖细颈）
+  /* 用**逐事件瞬时速度**判入笔，而不是平滑后的 S.vs ——
+     S.vs 有 ~6 帧滞后，起笔那几帧还接近 0，锥度就落空了（起笔仍旧是圆头）。
+     （tNow / dtm 已在本函数开头算过 —— 那里还要用它们做停笔检测。） */
+  const vNow = (vOv === undefined) ? dist/Math.max(1e-3, dtm) : vOv;   // vOv：测试用速度覆盖
+  S._vNow = vNow;                                            // 供 stampInk 的拖曳形变瞬时驱动（起笔加速即出水滴）
+  const depth = 0.86*Math.min(1, vNow/(W*0.20));   // 0.80→0.86：起笔更尖（0.20→0.14 起步）；上限别贪深——0.92 时笔尖压深低于接触阈值、起笔段静默无墨（实测）
+  if(S.tapOn && S._revd){ S.tapOn = false; S.tapS = 0; }    // 掉头即撤收笔锥度（钝收交给 huiFeng）
+  S._revd = false;                                           // 标记只消费一段
+  /* 入纸瞬间就给「已拖动」的截面形状：真笔起笔时笔带着速度落纸，截面本就是
+     后掠水滴。若第一枚是正圆，它的侧向凸出只被头几枚覆盖 → 起笔处露出一圈灰。
+     慢慢按下去（点）时 vNow≈0 → 不预置 → 仍是正圆，点不受影响。 */
+  if(S._dragE === undefined){
+    S._dragE = Math.max(DRAG_MAX*Math.min(1, S.vs/(W*DRAGV)),
+                        DRAG_MAX*0.55*Math.min(1, vNow/(W*0.20)));
+  }
+  /* 「延续笔」判定：紧贴上一笔末端 + 方向与上一笔末段掉头 → 不是新起笔，
+     是同一动作的延续（竖钩的趯、回锋接续）→ 不给入笔锥度：钩的根部必须是厚的。 */
+  /* 延续笔判定见下方（Lin 定义之后） */
+  /* 起笔处若发生方向掉头（楷书「逆锋起笔」），那是**顿**不是尖：
+     逆锋一顶就转身，落纸就该是满宽的头部 —— 所以关掉入笔锥度。 */
+  if(S.entryRamp === undefined) S.entryRamp = true;
+  if(S.entryRamp && S.strokeLen < Lin && S._prevEnd){
+    const pe = S._prevEnd;
+    const near  = Math.hypot(S.x - pe.x, S.y - pe.y) < 1.8*Math.max(6, pe.r);
+    const fresh = (performance.now()/1000 - pe.t) < 1.2;
+    const revd  = (S.ux*pe.ux + S.uy*pe.uy) < -0.15;
+    if(near && fresh && revd) S.entryRamp = false;
+  }
+  const dep = (S.revA0 !== undefined && S.revA0 < Lin) ? 0
+            : (S.entryRamp === false ? 0 : depth);
+  /* ---- 逆锋顿起的「融合」----
+     逆锋（起笔处掉头）会让头两段已经按「起笔渐入」画成细的，之后顿点又满宽 →
+     视觉「细颈 + 圆点」两截（用户对比字帖：起笔一坨疙瘩）。真迹的顿是藏在
+     笔画里的宽。这里把已入队的前段锥度一次性抬到 0.85 —— 细颈消失，
+     「顿→行笔」宽度连续。只对逆锋起笔生效，普通起笔不受影响。 */
+  if(S.revA0 !== undefined && S.revA0 < Lin && S.strokeLen < Lin*2.5){
+    for(const q of inkQ){ if(q.tf !== undefined && q.tf < 0.85) q.tf = 0.85; }
+    /* 入纸渐深（touchT 的 lf 因子）也要跳：顿已经把笔按进纸了，再走「渐深」
+       会在顿点后面压出一段「细颈」（~0.12s ≈ 快行 77px，实测就是颈的长度）。 */
+    S.touchT = 0;
+  }
+  const inF = (S.strokeLen < Lin)
+            ? (1 - dep*(1 - Math.pow(Math.max(0, S.strokeLen)/Lin, 1.5))) : 1;   // 幂 1.1→1.5：前段更细，首段落点不再一坨短棒（用户对比字帖）
+  let outF = 1;                                         // 收笔渐出
+  if(S.tapOn){
+    if(S.tapS <= S.tapL) outF = 0.08 + 0.92*Math.pow(Math.max(0, 1 - S.tapS/S.tapL), 1.4);
+    /* 锥长用完还在写 → 慢慢把宽度还回来；窗口给足 3×锥长：
+       真实收笔长度常超过一个锥长，窗口太短会在锥尖后又鼓出一个墨点。 */
+    else outF = Math.min(1, 0.08 + 0.92*(S.tapS - S.tapL)/(3*S.tapL));
+  }
+  /* 掉头分支一旦伸出笔身（>1.1×体宽），它就不是「回锋」（回锋只在笔身内回收）
+     而是「趯/钩」—— 钩要向外挑出去并收成尖，所以撤掉钝收、改成出锋式收细。
+     revAt 在 feedPoint 掉头时已记录，**不要求 tapOn 存活**（竖钩趯快时
+     tapOn 会在趯中释放，见 feedPoint 注释）；90° 横折不触发掉头检测，
+     所以不会误伤横折的竖画。 */
+  if(S.revAt !== undefined
+     /* 距折点 > 5×体宽才算「挑出去的钩」：折角刚过 2~3 体宽内的方向变化是
+        转锋的余波，不是钩 —— 否则折后竖的中段会被削出 20px 细腰（实测）。 */
+     && (S._zheS === undefined || S.strokeLen - S._zheS > 5*Rb)){
+    const revD = S.strokeLen - S.revAt;
+    if(revD > 1.1*Rb && revD < 3.5*Rb){ S.huiFeng = false; S.hookOut = true; }
+  }
+  /* 回锋/趯都是「收笔形态」，只在掉头后一小段距离内成立。掉头后继续行笔远超
+     一个钩的长度（>6×体宽）= 那早已不是收笔，是接着写 —— 必须把宽度还给行笔，
+     否则 huiFeng 把宽度永久钉在 ≥0.80、hookOut 把宽度永久钉在 0.10（发丝），
+     连笔/长笔画的后半段全部报废（用户实测「后续不会再次变粗」的另一条路径）。
+     6×体宽以内原样保留：真实的回锋/趯尾都远在这个长度内，钩形不受影响；
+     6× → 8×体宽平滑斜坡还给体宽，然后状态作废。 */
+  if(S.huiFeng && S.revAt !== undefined && S.strokeLen - S.revAt > 6*Rb){
+    S.tapOn = false; S.tapS = 0; S._vTop = S.vs;        // 速度基准重来，防止 tapOn 借旧峰值立刻复活
+    const rd = S.strokeLen - S.revAt;
+    if(rd > 8*Rb){ S.huiFeng = false; S.revAt = undefined; }
+    else outF = Math.min(outF, 0.80 + 0.20*Math.min(1, (rd - 6*Rb)/(2*Rb)));   // 0.80 → 1.00 斜坡
+  }
+  if(S.huiFeng) outF = Math.max(outF, 0.80);            // 回锋：末端保持宽度，收成钝头
+  if(S.hookOut){                                        // 趯/钩：沿挑出的分支收成尖
+    const revD = Math.max(0, S.strokeLen - S.revAt);
+    /* 下限 0.28 → **0.50**：对比《雁塔圣教序》「月」的趯 —— 钩身是粗壮的挑
+       （约半个体宽、有明显外扩），只有末端收尖；0.28 还是细。
+       锥长 2.2 → 3.0×体宽：钩身大部分保持宽度，收尖交给末端 flick。 */
+    if(revD > 6*Rb){                                    // 判错/连笔保险：收尖后还一路在写
+      if(revD > 8*Rb){ S.hookOut = false; S.revAt = undefined; }
+      else outF = Math.min(outF, Math.max(0.50, 0.50 + 0.50*Math.min(1, (revD - 6*Rb)/(2*Rb))));  // 0.50 → 1.00 斜坡
+    } else {
+      /* ---- 钩 vs 提：按**挑出方向**区分（用户 2026-10-22）----
+         「以」左旁的竖提，转锋是**弹性的**：笔毛吸附纸面、蓄力后整束上弹，
+         笔尖不会崩出去 → 笔腰该保持粗壮，末端略钝（不是发丝）。
+         而真正的钩（趯）是垂直向上挑，末端收尖。
+         判据：掉头前方向的「上挑分量」-sin(a)。
+           · 钩（接近垂直向上，-sin≈1）→ 收到 0.50（原行为）
+           · 提（斜右上 -sin≈0.5~0.7）→ 只收到 0.78，且锥长拉长 1.6×（缓收）
+         两条之间平滑过渡，不跳变。 */
+      /* ---- 钩 vs 提：按**挑出去的方向**区分（用户 2026-10-22）----
+         「以」左旁的竖提：转锋是**弹性的**——笔毛吸附纸面、蓄力后整束上弹，
+         笔尖不会崩出去 → 笔腰该保持粗壮，末端略钝（不是发丝）。
+         真正的钩（趯）是几乎垂直向上挑，末端收尖。
+         判据用**当前段方向**（= 掉头后正在挑出去的方向），不是掉头前方向 ——
+         两者掉头前都是「竖画向下」，无从区分。
+           钩：挑出方向接近 -90°（垂直向上）→ |cos| 小
+           提：挑出方向 ≈ -35°（斜右上）   → |cos| 大 ≈0.82
+         两条之间平滑过渡。 */
+      { const aOut = Math.atan2(S.uy, S.ux);            // 当前（挑出）方向
+        const lateral = Math.abs(Math.cos(aOut));       // 1=水平挑(提), 0=垂直挑(钩)
+        const hookness = Math.max(0, Math.min(1, (0.80 - lateral)/0.50));  // 0=提, 1=钩
+        const floor = 0.50 + 0.28*(1 - hookness);       // 钩 0.50 / 提 0.78
+        const tl    = 3.0*Rb*(1 + 0.60*(1 - hookness)); // 提的锥长拉长 1.6× → 缓收不尖锐
+        outF = Math.min(outF, Math.max(floor, 1 - (1 - floor)*Math.min(1, revD/tl)));
+      }
+    }
+  }
+  let capF = 1;                                         // 不许比收笔起点更宽
+  if(S.tapOn && S.deff > S.tapD)
+    capF = Math.pow(S.tapD/S.deff, 0.85)*(1 - 0.35*S.tapDrag)/Math.max(1e-3, 1 - 0.35*dragNow);
+  S.taperNow = Math.max(0.08, Math.min(1, inF*outF*capF));
+  return S.taperNow;
+}
+/* 折锋外拓量：体宽的 0.32 —— 褚遂良雁塔圣教序横折的方肩伸出量
+   （「庫」「餘」「載」同一规律：横末挑顿向右送出一截，从送出处折下，
+     折角撑开成带斜切面的方肩，而不是圆角拐）。调这一个数即可整体关小/关闭。 */
+const ZHE_EXT = 0.32;
+/* 折完成检测 + 外拓几何。返回本段（折后第一段）应使用的新起点。
+   只做正交折（横↔竖）：点积小 + 叉积大 —— 斜折（撇折/戈钩）与掉头
+   （180° 回转，叉积≈0）都不外拓，回锋/趯形态不受影响。
+   改的是「已入队未落墨」的段（INK_DELAY 队列保证折前段还在队里）。 */
+function zheOutreach(bx, by, ex, ey){
+  if(!S.drawing) return null;
+  const turn = peekTurn();
+  if(turn < 0.40){ S._zheArmed = false; return null; }   // 回到直行 → 重新武装
+  if(S._zheArmed || turn < 0.85) return null;            // 一次折只做一次
+  const n = trail.length;
+  if(n < 5) return null;
+  S._zheArmed = true;
+  const a1 = trail[Math.max(0, n-5)];                    // 折前方向
+  const a2 = Math.atan2(ey-by, ex-bx);                   // 本段（折后第一段）方向
+  const d1x = Math.cos(a1), d1y = Math.sin(a1);
+  const d2x = Math.cos(a2), d2y = Math.sin(a2);
+  const dot = d1x*d2x + d1y*d2y, crs = Math.abs(d1x*d2y - d1y*d2x);
+  if(dot > 0.35 || dot < -0.35 || crs < 0.75) return null;   // 只做近似正交的折
+  /* 外拓是横折专属语义（横末挑顿向右送出一截）—— 折前方向必须接近水平。
+     「竖→横」类的折（竖弯、竖后左拖、口字第二折）不外推：沿竖方向推
+     会把横段末端顶出个瘤（用户截图第一笔的团，部分来源于此）。 */
+  if(Math.abs(d1y) > 0.4) return null;
+  /* ---- 折角窗口用「弧长坐标」标记（不依赖帧级 turnKind）----
+     折角前 1~2 段入队时折角还没发生，turnKind 判定全丢；INK_DELAY 又让段
+     滞后 4~6 帧落墨，帧级状态到时已回落。弧长是稳定坐标：
+     记录折点弧长 _zheS，把**已入队**的尾部 20px 段回标 zhe=1，
+     紧随的折后段由 pushSegment 按 |strokeLen-_zheS|<14 自动标记。
+     正交折判据（dot/crs）就是外拓的触发条件——大折向/飞跃不触发外拓，
+     自然不会被打标（钢丝问题不会回来）。 */
+  S._zheS = S.strokeLen;
+  { let acc = 0; for(let i = inkQ.length-1; i >= 0 && acc < 20; i--){ inkQ[i].zhe = 1; acc += inkQ[i].len; } }
+  /* ---- 转锋 = 行笔切角（用户：原地压着大面积转不符合现实）----
+     旧做法把横末段沿横方向直推 ext —— 横末堆出一个球、竖又接在球上，
+     视觉「横折脱节」；且那一堆墨正来自「原地堆积」。
+     真实转锋：笔尖一路在走，转角走的是斜切面（字帖的方肩斜切角就是这么来的）——
+       · 横末段终点退到「切点1」（沿折前方向退 R）
+       · 插入一段「斜切过渡段」切点1→切点2（R = 1.15×体宽，笔沿它行进）
+       · 折后段从「切点2」续行（沿折后方向进了 R）
+     三段首尾相接、章沿斜段均匀分布 —— 不断、不堆、肩是斜切面。 */
+  const Rb2 = bodyRadiusHint();
+  const Rcut = 1.15*Rb2;                                 // 切角半径 ≈ 体宽（斜切面长度与字帖一致）
+  const cut1x = bx - d1x*Rcut, cut1y = by - d1y*Rcut;    // 切点1（横末退）
+  const cut2x = bx + d2x*Rcut, cut2y = by + d2y*Rcut;    // 切点2（竖首进）
+  const last = inkQ[inkQ.length-1];
+  if(last && last.len > 1.0){ last.x1 = cut1x; last.y1 = cut1y; }
+  const segLen = Math.hypot(cut2x-cut1x, cut2y-cut1y);
+  inkQ.push({ x0:cut1x, y0:cut1y, x1:cut2x, y1:cut2y, len:segLen, Dd:S.deff,
+              drag:(DRAG_MAX*Math.min(1, S.vs/(W*DRAGV))), zhe:1, zheW:0.72,
+              /* 斜切面段显式 zheW=1：它恰是折前/折后两个方向的对半线（≈45°），
+                 投影 1.41 —— 最该打折的一段。推它时 trail 里还全是折前的直行段，
+                 maxSegTurn=0，通用的「离轴+急转」判据吃不到它。 */
+              tf:Math.max(0.85, S.taperNow) });
+  S.strokeLen += segLen;                                 // 笔真的走了这段斜切面
+  S._zheDbg = { bx:bx, by:by, ext:segLen, ox:cut2x, oy:cut2y };   // 探针测量用
+  return { x0: cut2x, y0: cut2y };
+}
+function pushSegment(x0, y0, x1, y1, tf){
+  /* 记下这一段落纸时的「笔压」与「拖曳量」：收笔锥度要按它们回头封顶
+     （见 flushInk —— 鼓肚 = 减速时笔压回升 + 拖曳形变恢复成正圆，两者叠加）。 */
+  const drag = DRAG_MAX*Math.min(1, S.vs/(W*DRAGV));
+  const zhe = zheOutreach(x0, y0, x1, y1);               // 折后第一段：起点接到外拓折点
+  if(zhe){ x0 = zhe.x0; y0 = zhe.y0; }
+  /* 折角标记随段入队：弧长坐标（正交折，见 zheOutreach 注释）+ **peekTurn 通用判据** ——
+     用户折角处来回微调方向时，外拓的严格正交判据不触发、弧长标记不开，但转锋特化
+     （截面归一/毛刺归零/相位冻结/半径冻结/湿晕跳过）恰恰是那时候最需要的
+     （用户截图：折角堆成一坨 + 一圈圈同心弧）。方向正在快速变化 = 转锋中。 */
+  /* 折角标记：① 单段急转（>34°，折角是一两段内完成的）+ 累计 <115°；
+     ② 或弧长坐标（正交折，见 zheOutreach 注释）。
+     「单段急转」把渐进大转向（每段 ~31° 的飞跃弧）排除在外 —— 那是空中连带的
+     甩尾，不能吃 0.72 章宽系数（实测钢丝 0.32）。
+     回看窗口 3→5 段：摇摆折角（用户截图那坨）的折是 **8 个小段**蹭完的，
+     3 段窗口只覆盖到一半，[1,0] 那种小段漏标；5 段 ≈ 整段摇摆都吃得上特化。
+     **本段的方向差也算进去**（segA vs trail 末项）：trail 在 pushSegment 末尾才
+     追加本段，不然折角的第一段斜段永远慢一拍 —— 它恰是斜切面/摇摆的起手，
+     慢一拍就漏一枚全宽章（花瓣弧的第一圈）。 */
+  const segA0 = Math.atan2(y1-y0, x1-x0);
+  /* 本段 vs 上一段的转角（segDelta）：既是 maxSegTurn 的一项，也是「折角 vs 飞跃」的
+     判别式 —— 飞跃入段从竖直接甩到右上约 140°，那是抬笔连带的甩尾不是折角，
+     吃折扣会把飞跃段削成钢丝（实测 0.37 < 0.45 地板）。折角总转角 ≤115°，
+     分摊到单段更小，所以 segDelta <2.0 能把飞跃/掉头挡在外面。 */
+  let segDelta = 0;
+  let maxSegTurn = 0;
+  { const n = trail.length;
+    if (n >= 1){
+      let d = segA0 - trail[n-1];
+      while(d >  Math.PI) d -= 2*Math.PI;
+      while(d < -Math.PI) d += 2*Math.PI;
+      segDelta = Math.abs(d);
+      if (segDelta > maxSegTurn) maxSegTurn = segDelta;
+    }
+    for (let i = Math.max(1, n-4); i < n; i++){
+      let d = trail[i] - trail[i-1];
+      while(d >  Math.PI) d -= 2*Math.PI;
+      while(d < -Math.PI) d += 2*Math.PI;
+      if (Math.abs(d) > maxSegTurn) maxSegTurn = Math.abs(d);
+    }
+  }
+  /* segDelta <2.0（单段转角 <115°）同时是 zhe 的门卫：趯的入段是 ~144° 反转，
+     不是折角 —— 放它进 zhe 会把锥度保底 0.85 顶在钩段上，钩就尖不起来
+     （实测竖钩底团比 1.11→1.18、趯上段 44.7→51.4、钩 tf 0.63→1.00）。 */
+  const zheNow = ((maxSegTurn > 0.60 && segDelta < 2.0 && peekTurn() < 2.0) || (S._zheS !== undefined && Math.abs(S.strokeLen - S._zheS) < 14)) ? 1 : 0;
+  updateSmooth();   // 方向持续变化度（见函数注释；native 通路在 feedPoint 里也调）
+  /* ---- zheW（0.72 章宽折扣）按**段自身方向**判，不按转向判据 ----
+     折扣的物理原因是「章沿行笔方向拉长 → 离轴段的水平/垂直投影涨 41%」，
+     所以正确的判据就是段自己的方向：投影 = |cosθ|+|sinθ|（轴对齐=1，45°=1.41）。
+     投影 >1.25（≈ 离两轴 >20°）才该打折 —— 横/竖段投影=1 不该打折（打了就钢丝），
+     斜切面/摇摆折的斜段投影 1.3~1.41 该打折（不打就是用户截图那圈花瓣弧）。
+     「近 5 段内有急转」把**折角**和**撇/飞跃**区分开：后者是故意写的粗斜笔画，
+     每段只转 ~31°（<34° 阈值），吃折扣会成钢丝（实测 0.32）。
+     钩段（hk/趱）除外：那是故意的细锋。 */
+  const segProj = Math.abs(Math.cos(segA0)) + Math.abs(Math.sin(segA0));
+  const zheWNow = (!S.hookOut && segProj > 1.25 && maxSegTurn > 0.60 && segDelta < 2.0 && peekTurn() < 2.0) ? 1 : 0;
+  /* 新方向是否已稳定（尾两段方向不再变）：折角转完会稳定进入竖（打折的正当理由），
+     飞跃落点转完就停/抬手、尾段方向还在变（不该打折）。 */
+  { const n = trail.length; let stable = false;
+    if (n >= 3){ let d1 = trail[n-1]-trail[n-2], d2 = trail[n-2]-trail[n-3];
+      while(d1 >  Math.PI) d1 -= 2*Math.PI; while(d1 < -Math.PI) d1 += 2*Math.PI;
+      while(d2 >  Math.PI) d2 -= 2*Math.PI; while(d2 < -Math.PI) d2 += 2*Math.PI;
+      stable = Math.abs(d1) < 0.18 && Math.abs(d2) < 0.18; }
+    S._turnStable = stable;
+  }
+  /* 急转 + 新方向已稳定 = 这就是一个折（不限于严格正交）→ 记折点弧长 _zheS，
+     折角特化窗口跟着弧长走（maxSegTurn 只在急转后 1~2 段内 >0.6，窗口比它长）。
+     已入队的尾部段回标（同 zheOutreach 的做法）；正交折的切角几何照常由
+     zheOutreach 记它自己那份，互不冲突。 */
+  /* segDelta <2.0 同样门卫这里：趯/飞跃的入段是 ~140° 大反转，点上 _zheS 会有两个后果 ——
+     ① 1625 行的钩检测被「距折点 >5×体宽」挡死 → 钩不收尖（实测钩 tf 0.63→1.00）；
+     ② 队尾 20px 被回标 zhe=1 → 拖曳形变归零、横向量出的宽度掉 15%
+     （实测竖钩底团比 1.11→1.18、飞跃/落下 0.59→0.51）。折角总转角 ≤115°，分摊到单段更小。 */
+  if(maxSegTurn > 0.60 && segDelta < 2.0 && peekTurn() < 2.0 && S._turnStable){
+    S._zheS = S.strokeLen;
+    /* 只回标 zhe（锥度保底/截面特化），**绝不回标 zheW** —— 0.72 折扣是按段自身
+       方向判的（见 segProj），无脑回标会把队尾的横/竖段也打折 → 削成钢丝
+       （实测飞跃/落下比值 0.59→0.51）。斜段该吃折扣的由 zheWNow 自己判。 */
+    { let acc = 0; for(let i = inkQ.length-1; i >= 0 && acc < 20; i--){ inkQ[i].zhe = 1; acc += inkQ[i].len; } }
+  }
+  /* 折角窗口半径**不锁起点**：转锋提笔（rawLift2）要穿透折角把截面收细 ——
+     锁了起点 deff 等于把折角宽度冻住，提笔失效（用户截图那坨墨）。
+     折角内 deff 是渐变（提笔渐变）→ 段间阶差 <2% 肉眼不可见；曾经的「阶梯弧」
+     来自 liftAmt 慢回落的跳变，那已由「解冻帧对齐」修掉，不是渐变的锅。 */
+  const Dd = S.deff;
+  inkQ.push({ x0:x0, y0:y0, x1:x1, y1:y1, len:Math.hypot(x1-x0, y1-y0), Dd:Dd, drag:drag,
+            zhe:zheNow, smooth:S._smoothNow, hk:(S.hookOut ? 1 : 0),
+            /* zheW = 段自身方向离轴 + 近段急转（见上面 segProj/zheWNow 注释）。
+               弧长窗口（_zheS ±14px）保留给 zhe 标志；zheW 不再需要它 ——
+               窗口 14px 盖不住 ~36px 的斜切面，正是折扣只吃上一半的原因。 */
+            /* zheW 存**折扣系数**而不是布尔：0 = 不打折。系数按离轴程度连续过渡
+               （投影 1.15→1.41 对应 1.00→0.72）—— 布尔会让折角两侧出现
+               17.6→12.7→17.6 的半径台阶，台阶外的空档只被邻居章的边缘覆盖，
+               泛出一圈灰（用户截图的鼓包）。连续过渡让外缘是一条平滑曲线。 */
+            zheW: zheWNow ? (1 - 0.28*Math.min(1, Math.max(0, (segProj-1.15)/0.26))) : 0,
+            tf:(zheNow ? Math.max(0.85, tf === undefined ? S.taperNow : tf) : (tf === undefined ? S.taperNow : tf))});
+            /* 折角段锥度保底 0.85：转锋是行进中的换向，不是收笔 —— 别把折角削细 */
+  if(inkQ.length > 400){                 // 兜底：异常高频输入时不让它无限堆积
+    const q = inkQ.shift(); stampInk(q.x0, q.y0, q.x1, q.y1, undefined, q.zhe, q.hk, q.zheW, undefined, q.smooth);
+  }
+  const dx = x1-x0, dy = y1-y0;
+  if(dx*dx + dy*dy > 0.25){              // 忽略亚像素抖动，否则方向全是噪声
+    trail.push(Math.atan2(dy, dx));
+    if(trail.length > 12) trail.shift();
+  }
+}
+/* 前瞻：最近若干段的累积方向变化（绝对值）。K=5 段 ≈ 83ms 的轨迹，够识别一次折锋。 */
+function peekTurn(){
+  const n = trail.length;
+  if(n < 2) return 0;
+  const K = Math.min(5, n-1);
+  let total = 0;
+  for(let i = n-K; i < n; i++){
+    let d = trail[i] - trail[i-1];
+    while(d >  Math.PI) d -= 2*Math.PI;
+    while(d < -Math.PI) d += 2*Math.PI;
+    total += d;
+  }
+  return Math.abs(total);
+}
+/* =========================================================
+   Procreate 复刻模式（S.engine==='procreate'）
+   一手依据：_tools/_procreate_research.md（Procreate Handbook 5.0 / 5.2 / 现行版
+   + Artists' Handbook PDF；每条结论在笔记里有 URL）。
+   复刻项（A 类，数学形式明确）：
+     A4 双极线性速度映射：官方 Dynamics→Speed —— -100% 慢细 / +100% 快细 / 0 均匀。
+        毛笔手感取正档（快=细）。纯线性，没有自研 liftAmt 的非对称限速/封顶。
+     A5 Response：压感通道一阶低通（官方「响应」滑块：拉满最适合手写与墨画）。
+        无压感设备时低通压深滑杆值本身。
+     A6 Touch Taper：起笔按弧长包络由细到粗；收笔无 Apple Pencil 预测 API
+        （B5 退化路径，官方 Tip Animation 关时也是「抬笔后补」）→ 抬笔触发
+        补锥 flick：固定长度 + 长时长 + 缓渐提。
+     A1/A2 印章渲染与重叠浓淡直接复用现有 stampInk（同构）。
+   ========================================================= */
+const PC = {
+  speedK: 0.55,     // Size/Speed 双极滑块强度（0..1；社区毛笔笔刷通常不满档）
+  vFull: 0.50,      // 速度映射满值速度（×画布宽 / 秒）
+  respTau: 0.05,    // Response 低通时间常数（秒）
+  taperIn: 2.6,     // 起笔锥长（×平均体宽半径）
+  taperOut: 0.10,   // 收笔补锥长度（×画布宽）
+  fadeIn: 1.15,     // 起笔剖面指数（小=尖锐，大=圆钝；对应官方 Tip）
+  fadeOut: 1.35,    // 收笔渐提指数（小=缓收）
+  durOut: 0.30,     // 收笔补锥时长（秒）
+};
+/* Touch Taper 起笔包络：前 taperIn×体宽半径的弧长内 0.12 → 1.00 */
+function pcTaper(dist){
+  const Lin = Math.max(12, PC.taperIn*bodyRadiusHint());
+  if(S.strokeLen < Lin){
+    const t = Math.pow(Math.max(0, S.strokeLen)/Lin, PC.fadeIn);
+    return Math.max(0.08, 0.12 + 0.88*t);
+  }
+  return 1;
+}
+/* 出锋参数：自研物理按速度给甩锋长尾；Procreate 是收笔补锥（Touch Taper 退化）——
+   固定长度 + 长时长 + 缓渐提。 */
+function flickSpec(){
+  if(S.engine !== 'physics') return { len: PC.taperOut*W, dur: PC.durOut, fade: PC.fadeOut };
+  const vn = Math.min(1, S.vs/(W*0.9));
+  /* 钩尾（hookOut）：短 + 缓收 —— fade 2.2 配 0.28 下限会把钩尾双 taper 叠砍成针 */
+  if(S.hookOut) return { len: 0.05*W, dur: 0.18, fade: 1.5 };
+  return { len: (6 + 26*vn + 40*vn*vn)*(S.tauM||1)*(W/REF), dur: 0.16, fade: 2.2 };
+}
+/* ---- 行笔平滑度：方向持续变化度 ∈[0,1]（消「转弯扇形崩边」专用）----
+   竖提这类「竖下行 → 集中转锋 → 右上挑」总转角 120°，摊到 240Hz 的十几个样本上
+   每样本只转 ~8°，**过不了 orthoZhe 的单段急转门卫** → 拖曳形变满值。拖曳长轴
+   逐样本重算方向，相邻章外缘错开层叠 → 转弯处一圈扇形崩边，再被 Canvas2D 抗锯齿
+   一描，就是用户截图里「毛笔的毛崩出去」那圈浅色（2026-10-23 竖提截图）。
+   按「近 5 段累积转角」连续降权（不是单段门卫，渐进弯才抓得到）。
+   必须**两条通路都调用**：native 走 feedPoint 不走 pushSegment，
+   只在 pushSegment 里算的话 S._smoothNow 永远不更新（2026-10-23 实测踩坑）。 */
+function updateSmooth(){
+  let acc = 0;
+  const tn = trail.length;
+  for(let i = Math.max(1, tn-4); i < tn; i++){
+    let d = trail[i] - trail[i-1];
+    while(d >  Math.PI) d -= 2*Math.PI;
+    while(d < -Math.PI) d += 2*Math.PI;
+    acc += Math.abs(d);
+  }
+  S._smoothNow = (segDeltaOk() && peekTurn() < 2.0) ? Math.min(1, acc/0.50) : 0;
+}
+/* 飞跃/趯（segDelta ≥2.0 的 ~140° 大反转）必须排除：那是甩尾不是折角，
+   压平会把飞跃段削成钢丝（实测比值 0.44 挂，同 zhe 的门卫）。 */
+function segDeltaOk(){
+  const tn = trail.length;
+  if(tn < 2) return true;
+  let d = trail[tn-1] - trail[tn-2];
+  while(d >  Math.PI) d -= 2*Math.PI;
+  while(d < -Math.PI) d += 2*Math.PI;
+  return Math.abs(d) < 2.0;
+}
+/* 每帧刷新转折增益（在算 deff 之前调用，这样同一帧的墨迹就用得上） */
+function updateTurnBoost(){
+  if(!S.drawing || trail.length < 2){
+    S.turnBoost += (1 - S.turnBoost) * 0.25;      // 没在写 → 缓慢回到 1
+    S.turnKind = '直行';
+    return;
+  }
+  const turn = peekTurn();
+  let tgt = 1.0, kind = '直行';
+  if(turn > 0.85){      tgt = 1.02; kind = '折锋·顿肩'; }   // 硬折 → 折肩形态交给外拓方肩，压深几乎不加（1.34→1.12→1.08→1.02）
+  else if(turn > 0.30){ tgt = 1.05; kind = '圆转'; }        // 缓转 → 几乎不干预
+  S.turnTgt  = tgt;
+  S.turnKind = kind;
+  /* ---- 转弯锁存（横折竖画误收锥的根治）----
+     硬折（横→竖这类 >49° 转角）之后，书写者必然减速 —— 这是转弯的代价，
+     不是收笔。旧逻辑只看「vs < 0.45×本笔峰值」就启动收笔锥度，横画把峰值
+     推高后，竖画全程的速度都趴在水线下 → 整条竖被削成细腰再鼓包
+     （用户实测截图：横折竖画上细→腰→下端鼓）。
+     折锋即锁存收笔锥度；只有书写者在新方向重新提速（vs 回到峰值 80% 以上，
+     证明他是在行进而不是在收笔）才解锁。之后这一笔自己的收笔仍正常判定。 */
+  /* 转锋即锁存（阈值 0.85→0.40）：折角减速不是收笔 —— 硬折的判定阈值 0.85 之前
+     还有一段「圆转期」，那时的减速足够触发 tapOn 收笔锥度 → 折角带被削出细腰
+     （切角版实测 19.6 vs 41.5）。一起转就不许收，转完在新方向重新提速才解锁。 */
+  if(turn > 0.40) S._turnLatch = true;
+  S._turnSharp = turn;                                      // diag：转角量（stampInk 区分正交折与大折向/飞跃）
+  /* 折锋窗口冻结提按量：折角减速会让 liftAmt 自然回升（慢=按=宽），
+     叠在 turnBoost 上折角就鼓出一块（实测横末带宽 61.6 vs 竖身 42.1 = 1.46，
+     用户「转锋笔迹不干净」）。冻结后折角宽度≈行笔宽度，折肩只留
+     turnBoost 的微顿 + 外拓方肩；直行后（trail 滑出折角段）解冻，
+     竖画该有的「慢行按宽」不受影响。 */
+  /* 折锋前兆（turn>0.45，转折进行中）就冻结：折肩初段的 1~2 帧 liftAmt
+     回升会在折角起点先鼓一小段（折角特写可见），提前冻才干净。 */
+  if(turn > 0.45) S._turnHold = true;
+  else if(turn < 0.30){ if(S._turnHold) S._turnJustReleased = true; S._turnHold = false; }
+  S.turnBoost += (tgt - S.turnBoost) * 0.30;                // 平滑，避免压深突变
+}
+/* 落墨队列：**按弧长压住队尾 taperLen 像素**，不再按时间延迟。
+   为什么要压住尾巴 —— 收笔锥度必须「回头改写」最后一段的宽度，
+   而回头改写的前提是那段还没落纸。这是 Procreate 的做法
+   （官方原话：抬笔瞬间很难做出漂亮锥度 → 人为延长）：
+     · flushInk(false)：正常书写，放行「距笔尖 ≥ taperLen」的段；
+     · flushInk(true) ：笔画结束（抬笔 / 停笔收锋前置），把尾巴按距末端弧长写进锥度。
+   代价是墨迹比笔尖晚 taperLen 像素（默认 16px），常规书写速度下不到一帧。
+   停顿 >60ms 视为「还想接着写」→ 尾巴原样放掉，不写锥度。 */
+/* 队尾要压住多少像素：至少 2.6× 平均体宽（锥度窗口），否则锥度只写在窗口的后半截 */
+const taperHold = () => {
+  const Rm = S._wN ? (S._wSum/S._wN) : 20;
+  /* 只留约半个笔宽：墨迹几乎实时（旧版留 2.4 个笔宽 → 慢写时一顿一顿地追上来） */
+  return Math.max(5, Math.min(30, 0.5*Rm));
+};
+function flushInk(force){
+  /* 段内插值半径的起终点：起点 = 本段入队时的压深 q.Dd，终点 = **下一段**的 Dd。
+     不能再用落墨帧的 S.deff 当终点 —— 队列滞后 4~6 帧，那会把宽度抹平；
+     也不能只有起点没有终点（退化成常量）。出锋/驻笔那两条不走队列的路径
+     不设 _segDeffTo，stampInk 便回落 S.deff，行为不变。 */
+  const flushOne = (q, qNext) => {
+    S._segDeffTo = (qNext && qNext.Dd !== undefined) ? qNext.Dd : q.Dd;
+    stampInk(q.x0, q.y0, q.x1, q.y1, q.tf === undefined ? S.taperNow : q.tf, q.zhe, q.hk, q.zheW, q.Dd, q.smooth);
+  };
+  if(force){
+    /* 锥度已随段算好（updateTaper），这里原样落完 —— 不再回头改写。 */
+    for(let i=0;i<inkQ.length;i++){
+      flushOne(inkQ[i], inkQ[i+1]);
+    }
+    inkQ.length = 0; S._segDeffTo = undefined;
+    return;
+  }
+  if(S.idleT > 0.06){                            // 停住了：尾巴直接放掉
+    while(inkQ.length){ const q = inkQ.shift(); flushOne(q, inkQ[0]); }
+    S._segDeffTo = undefined;
+    return;
+  }
+  let total = 0; for(const q of inkQ) total += q.len;
+  const H = taperHold();
+  while(inkQ.length && total - inkQ[0].len >= H){
+    const q = inkQ.shift(); total -= q.len;
+    flushOne(q, inkQ[0]);
+  }
+  S._segDeffTo = undefined;
+}
+
+/* =========================================================
+   10.5 §5.4 停笔自动收锋 —— 鼠标用户补上「渐提收笔」这一环
+   真实毛笔收笔是笔仍在纸上、一路渐提收锋离纸；鼠标只能「抬起」（瞬间离纸），
+   于是笔画末端是齐头的，没有锋。这里补的动作：
+     笔画已成形（累计弧长 ≥ 5% 画布宽）后停笔 IDLE_LIFT 秒
+       → 判定为收笔意图 → 沿行进方向执行出锋弹射并离纸。
+   中途转折顿笔不会误触：触发条件要求「笔速已近零 + 本笔走过足够路程」。
+   仅对无压感设备生效 —— 压感笔有 pressure=0 事件可直接表达离纸。
+   出锋尾长由 §7 校准的 τ_m 个性化：甩收型尾巴长，顿收型尾巴短。
+   ========================================================= */
+function stepAutoLift(dt){
+  /* ---- 出锋推进中：手动把笔尖沿行进方向推出，同时渐提 ---- */
+  if(S.flick){
+    const f = S.flick;
+    /* 记下本帧起点的压深：出锋一帧掉 ~25% 宽，落墨时要按它在段内插值，
+       不然针尾是一串平台（见 stampInk 的 dFrom 注释）。此刻 S.deff 还是
+       上一帧的末值（stepPhysics 尚未跑本帧）—— 正是本帧起点的宽度。 */
+    if(f.dFrom === undefined) f.dFrom = S.deff;
+    f.t += dt;
+    const u  = Math.min(1, f.t/f.dur);
+    const adv = f.len*(1 - Math.pow(1-u, 2.2));            // 先快后慢的趟出
+    const nx = f.x0 + f.ux*adv, ny = f.y0 + f.uy*adv;
+    S.px=S.x; S.py=S.y; S.x=nx; S.y=ny;
+    S.vAcc += Math.hypot(nx-S.px, ny-S.py);                // 让速度推断保持在出锋速度
+    /* 渐提曲线原为 1-u²（u=0.5 时还剩 0.75，提得太慢 → 末端粗）。
+       改成 (1-u)^1.5：u=0.5 只剩 0.35，u=0.8 只剩 0.09 —— 收得果断，锋才出得来。 */
+    S.flickFade = Math.pow(1-u, f.fade || 2.2);             // 渐提：压深 → 0，末端成锋（fade 小=缓收）
+    S.flickCarry = (S.tailCarry === undefined ? 1 : S.tailCarry)*Math.pow(1-u, 1.1);   // 宽度从锥尖接续收到 0
+    if(u >= 1){
+      /* 出锋走完 = 这一笔收了。
+         ⚠️ 这里**不能**把 down 置 false —— 那等于「虚拟抬笔」，手指明明还按在屏上，
+         用户继续写却落不了墨，必须松手重按。连续书写时笔画之间总会有思考停顿，
+         于是「一直写但墨迹断成好几截」—— 这是实测复现出来的真实症状。
+         正确做法：只结束「笔画」（drawing=false），仍保留 down。
+         之后手指一动，feedPoint 会自动开下一笔（见 startNewStroke）。 */
+      S.flick=null; S.flickFade=1; S.drawing=false; S.liftT=LIFT; endStroke();
+    }
+    return;
+  }
+  if(!S.drawing || !down) return;
+  if(!S.autoLift || demo) return;
+  if(S.penPress && S._penSeen) return;                     // 压感笔不需要接管
+  /* 还没成形就松开/停笔，不算收笔（否则点个点会射出一根尾巴） */
+  /* 驻笔时长**无条件**累计：点按的墨全押在 idleT 上（stampInk 的驻笔积墨判据
+     idleT>0.03）。旧写法把累计也挡在「已成形成（strokeLen≥5%画布）」之后 →
+     原地点按/轻点永远不出墨（无头探针实测：31 段落墨调用、0 条墨迹路径）。
+     出锋触发仍然只对已成形的笔画放开（下面的 strokeLen 门槛不动）。 */
+  S.idleT += dt;
+  if(S.strokeLen < 0.05*W) return;
+  if(S.huiFeng) return;                                  // 回锋收笔：末端钝收，不出锋
+  if(S.idleT >= IDLE_LIFT){
+    /* 先把延迟队列排空：出锋由本函数自己推进笔尖、走的是不打队列的 stampInk 路径，
+       若队列还压着段，loop 会因为 inkQ.length!==0 而不给它们落墨。 */
+    flushInk(true);
+    const fs = flickSpec();
+    /* §5.2(d) 出锋长度 = (6 + 26v + 40v²)·τ_m：慢收也要有一截像样的锋
+       （原来是 3+10v+30v²，慢速时只有 ≈3τ ≈ 5px，跟没有一样）。
+       真正的长尾留给快甩：v=1 时约 72τ。Procreate 模式是收笔补锥
+       （Touch Taper 退化路径）：固定长度 + 长时长 + 缓渐提，见 flickSpec。 */
+    S.tailCarry = (S.taperNow === undefined ? 1 : S.taperNow);   // 出锋从当前锥度接续
+    S.flick = { t:0, dur:fs.dur, fade:fs.fade, len:fs.len, x0:S.x, y0:S.y, ux:S.ux, uy:S.uy };
+    S.idleT = 0;
+  }
+}
+
+/* =========================================================
+   10.6 §7 个性化校准：理想提按 ↔ 用户输入的映射
+   ---- 交互流程 ----
+     ① 点「开始校准」→ 依次呈现六类笔画(横竖点撇捺竖钩)
+     ② 每类在纸面画出「描红中轴」——宽度就是理想提按 d(s)，
+        并标注起点；用户像平时写字一样沿中轴临写
+     ③ 抬笔后结算：终点须落回中轴末端容差内（否则该笔作废、请重写）
+     ④ 有效样本按「定弧长」重采样 → 中心差分求速度 → 与 d(s) 配成
+        (v_k, target_k) 训练对
+     ⑤ 六笔写完后：网格搜索 V₁ᵐ + 闭式最小二乘 L_m + 尾段速度比 Q_tail
+     ⑥ 结果写入 S.V1m / S.Lm / S.tauM，并持久化到 localStorage
+   ---- 为什么这样有效 ----
+     保留的是用户「哪里快、哪里慢」的个人节奏；
+     改写的是「快 → 提多少」这条映射本身。
+     所以校准后用户不会觉得「被机器拉着写」，而是
+     「我一如既往地写，但快慢终于正确地变成了粗细」。
+   ========================================================= */
+const cal = { active:false, key:null, idx:0, rec:null, samples:[], tails:[] };
+
+function calBegin(){
+  cal.active=true; cal.idx=0; cal.samples=[]; cal.tails=[]; cal.rec=null;
+  cal.key = CAL_ORDER[0];
+  clearInk();
+  calRenderHint();
+  render();
+}
+function calFinish(){
+  cal.active=false; cal.key=null; cal.rec=null;
+  render();
+  calRenderResult();
+}
+function calAbort(){
+  cal.active=false; cal.key=null; cal.rec=null; cal.samples=[]; cal.tails=[];
+  render(); calRenderResult();
+}
+/* ---- 重采样：按等弧长取 n 个样本 ---- */
+function calResample(rec, n){
+  const pts = rec.pts;
+  if(pts.length < 6) return null;
+  const total = pts[pts.length-1][3];
+  if(total < 1e-6) return null;
+  const out = new Array(n);
+  let j = 1;
+  for(let i=0;i<n;i++){
+    const target = total*i/(n-1);
+    while(j < pts.length-1 && pts[j][3] < target) j++;
+    const a = pts[j-1], b = pts[j];
+    const span = b[3]-a[3];
+    const u = span > 1e-9 ? (target-a[3])/span : 0;
+    out[i] = [ a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u, a[2]+(b[2]-a[2])*u, target ];
+  }
+  return out;
+}
+/* ---- 单笔结算 ---- */
+function onCalSample(rec){
+  const spec = STROKES[rec.key];
+  const n = 64;
+  const rs = calResample(rec, n);
+  const last0 = spec.path[spec.path.length-1];
+  const start0 = spec.path[0];
+  const gLen = Math.hypot(pxX(last0[0])-pxX(start0[0]), pxY(last0[1])-pxY(start0[1]));
+  const gotLen = rs ? rs[n-1][3] : 0;
+  if(!rs || gotLen < 0.20*gLen){
+    calNote('样本太短：只采到 '+Math.round(gotLen)+'px（中轴约 '+Math.round(gLen)
+            +'px，至少要写到 1/5）—— 沿中轴慢慢写完这一笔', true);
+    return;
+  }
+  /* 终点容差：论文要求 dev ≤ 40% 一笔长，保证采到的是「完整一笔」 */
+  const last = spec.path[spec.path.length-1];
+  const endPx = [pxX(last[0]), pxY(last[1])];
+  const startP = spec.path[0];
+  const startPx = [pxX(startP[0]), pxY(startP[1])];
+  const oneLen = Math.hypot(endPx[0]-startPx[0], endPx[1]-startPx[1]);
+  const dev = Math.hypot(rs[n-1][0]-endPx[0], rs[n-1][1]-endPx[1]);
+  if(oneLen > 1 && dev > 0.40*oneLen){
+    calNote('没写到「'+spec.name+'」的收笔处，这一笔作废，请重写', true);
+    return;
+  }
+  /* 中心差分速度：||p_{k+1}-p_{k-1}|| / (t_{k+1}-t_{k-1}) */
+  const V = new Array(n);
+  for(let i=0;i<n;i++){
+    const a = rs[Math.max(0,i-1)], b = rs[Math.min(n-1,i+1)];
+    const dt = b[2]-a[2];
+    V[i] = dt > 1e-4 ? Math.hypot(b[0]-a[0], b[1]-a[1])/dt : 0;
+  }
+  /* target(s) = 1 - min(1, d(s)/1.15)：按得深 → 该提得少 */
+  for(let i=0;i<n;i++){
+    const s = i/(n-1);
+    const tgt = 1 - Math.min(1, catD(spec.d, s)/1.15);
+    cal.samples.push({ v:V[i], target:tgt });
+  }
+  /* Q_tail：尾 16% 平均速度 / 全程平均速度（>1=甩收，<1=顿收） */
+  const meanV = V.reduce((a,b)=>a+b, 0)/n;
+  if(meanV > 1e-3){
+    const tk = Math.max(2, Math.round(n*0.16));
+    let tv=0; for(let i=n-tk;i<n;i++) tv += V[i];
+    cal.tails.push(Math.max(0, Math.min(1.2, (tv/tk)/meanV)));
+  }
+  cal.idx++;
+  if(cal.idx >= CAL_ORDER.length){
+    calFit();                                   // 六笔齐了 → 拟合
+  } else {
+    cal.key = CAL_ORDER[cal.idx];
+    calNote('很好 · 接下来写「'+STROKES[cal.key].name+'」（第 '+(cal.idx+1)+'/6 笔）', false);
+  }
+  clearInk(); render();
+}
+/* ---- §7.5 拟合：网格搜索 V₁ᵐ + 闭式最小二乘 L_m ---- */
+function calFit(){
+  const N = cal.samples.length;
+  if(N < 16){
+    calNote('样本不足（'+N+'），校准未生效 —— 请重跑并每笔写到收笔处', true);
+    calFinish(); return;
+  }
+  /* 若用户书写速度毫无起伏（Σl² < 1e-3），映射退化为常数 → 回退通用阈值 */
+  let sumL2 = 0;
+  const V0 = W*SPD0;
+  for(const p of cal.samples){
+    const l = Math.max(0, Math.min(1, (p.v-V0)/Math.max(1, W*SPD1-V0)));
+    sumL2 += l*l;
+  }
+  if(sumL2 < 1e-3){
+    calNote('你的书写几乎没有快慢变化，无法拟合出个人映射 —— 已保留通用阈值。试着写得有快有慢再校准一次。', true);
+    S.V1m=1; S.Lm=1; S.tauM=1; S.calDone=false;
+    calFinish(); return;
+  }
+  let best = null;
+  for(let V1m=0.5; V1m<=2.5001; V1m+=0.05){
+    const V1 = W*SPD1*V1m;
+    let sl=0, st=0;
+    for(const p of cal.samples){
+      const l = Math.max(0, Math.min(1, (p.v-V0)/Math.max(1,V1-V0)));
+      sl += l*p.target; st += l*l;
+    }
+    let Lm = st > 1e-9 ? sl/st : 1;
+    Lm = Math.max(0.5, Math.min(2.4, Lm));                 // §7.5 clamp
+    let mse = 0;
+    for(const p of cal.samples){
+      const l = Math.max(0, Math.min(1, (p.v-V0)/Math.max(1,V1-V0)));
+      const e = p.target - Lm*l; mse += e*e;
+    }
+    mse /= N;
+    if(!best || mse < best.mse) best = { V1m:V1m, Lm:Lm, mse:mse };
+  }
+  /* §7.6 尾长个人化：τ_m = 0.66 + 1.15·Q_tail（中位数，对离群鲁棒） */
+  let Qt = 1;
+  if(cal.tails.length){
+    const a = cal.tails.slice().sort((x,y)=>x-y);
+    const m = a.length>>1;
+    Qt = a.length%2 ? a[m] : (a[m-1]+a[m])/2;
+  }
+  S.V1m = best.V1m; S.Lm = best.Lm; S.tauM = 0.66 + 1.15*Qt;
+  S.calDone = true; S.calMSE = best.mse; S.calSamples = N;
+  calSave();
+  calFinish();
+  const style = Qt > 0.85 ? '甩收型（出锋长而利）' : (Qt < 0.55 ? '顿收型（出锋短而圆）' : '中性收笔');
+  calNote('校准完成 · 疾扫阈值 ×'+best.V1m.toFixed(2)+' · 提按幅度 ×'+best.Lm.toFixed(2)
+          +' · 你的收笔习惯：'+style+' · MSE '+best.mse.toFixed(4), false);
+  renderStats();
+}
+function calSave(){
+  try{ localStorage.setItem(CAL_KEY, JSON.stringify({V1m:S.V1m, Lm:S.Lm, tauM:S.tauM, mse:S.calMSE, n:S.calSamples})); }catch(e){}
+}
+function calLoad(){
+  try{
+    const raw = localStorage.getItem(CAL_KEY);
+    if(!raw) return false;
+    const o = JSON.parse(raw);
+    if(typeof o.V1m!=='number') return false;
+    S.V1m=o.V1m; S.Lm=o.Lm; S.tauM=o.tauM||1; S.calDone=true; S.calMSE=o.mse||0; S.calSamples=o.n||0;
+    return true;
+  }catch(e){ return false; }
+}
+function calClear(){
+  try{ localStorage.removeItem(CAL_KEY); }catch(e){}
+  S.V1m=1; S.Lm=1; S.tauM=1; S.calDone=false; S.calMSE=0; S.calSamples=0;
+  calNote('已恢复通用阈值（你的书写习惯仍在你手上，引擎回到出厂映射）', false);
+  renderStats();
+}
+function calNote(txt, bad){
+  const el = $('cal-status');
+  if(!el) return;
+  el.innerHTML = '<span class="'+(bad?'warn':'ok')+'">'+txt+'</span>';
+  if(bad) el.classList.add('shake'); else el.classList.remove('shake');
+}
+function calRenderHint(){
+  const s = STROKES[cal.key];
+  calNote('请沿朱砂中轴写「'+s.name+'」—— 轴的粗细就是这一段的理想提按。第 '+(cal.idx+1)+'/6 笔', false);
+}
+function calRenderResult(){
+  const el = $('read-cal'); if(!el) return;
+  if(S.calDone){
+    el.textContent = '个人映射：V₁×'+S.V1m.toFixed(2)+' · L×'+S.Lm.toFixed(2)
+                   + ' · τ×'+S.tauM.toFixed(2)+' · MSE '+S.calMSE.toFixed(4);
+  } else {
+    el.textContent = '未校准（通用阈值 V₁×1.00 · L×1.00）';
+  }
+}
+
+/* =========================================================
+   11. 主循环
+   ========================================================= */
+let last = performance.now(), tSim=0, tick=0;
+S._peak=0; S._strokeE=0; S._accE=0;
+function loop(now){
+  /* dtRaw = 真实帧间隔（含卡顿）；dt = 钳位后的物理步长（stepPhysics 用）。
+     速度推断必须用 dtRaw：卡顿那一帧积攒的位移若除以钳位值 0.05，spd 会虚高
+     数倍 → liftAmt 瞬间拉满（上升不限速、回落 4 秒）→ 笔画突然细成发丝且
+     半天回不来（用户实测「会卡出来字迹后续不会再变粗」的主因之一）。 */
+  const dtRaw = Math.max(1e-3, (now-last)/1000);
+  const dt = Math.min(0.05, dtRaw); last=now; tSim += dt; tick++;
+  S._t = tSim;
+
+  updateDemo(dt);
+  updateTurnBoost();                           // §10.4 前瞻转折 → 本帧 deff 就用得上
+  updateSmooth();                              // 方向持续变化度 → 拖曳形变降权（转弯扇形崩边）
+  stepAutoLift(dt);                            // §5.4 停笔自动收锋（含出锋推进）
+  if(S.liftT>0) S.liftT = Math.max(0, S.liftT-dt);
+  const u = S.liftT/LIFT;
+  let lf = u>0 ? Math.abs(2*u-1) : 1;
+  /* ---- 起笔渐入：弧长制（Procreate Touch Taper 的「长度」语义）+ 时间兜底 ----
+     pArc = 本笔已走弧长 / TOUCH_L，pTim = 时间窗进度；取两者较大的那个 →
+     「走完预算距离」或「顿够时间」任一满足即渐入完成。
+     弧长制把入口浓淡固定在距离上：慢起笔同样走满 TOUCH_L 才转浓（不再 6px 就黑成疙瘩），
+     快起笔不会拖出几十 px 的淡尾巴。 */
+  const touchL = Math.max(1, S.touchL || TOUCH_L0);
+  if(S.touchT>0 || S.strokeLen < touchL){
+    S.touchT = Math.max(0, S.touchT-dt);
+    const pArc = S.strokeLen / touchL;
+    const pTim = 1 - S.touchT/TOUCH;
+    const pIn = Math.max(0, Math.min(1, Math.max(pArc, pTim)));
+    lf *= 0.55 + 0.45*pIn;                    // 落笔渐入 → 入笔由轻到重，不出现墨疙瘩
+  }
+  /* ---- 疾扫自动提笔 ----
+     触控板 / 鼠标没有压感，d 恒定 → 永远不会提笔 → 快扫不会变细。
+     真人书写「疾扫必提」，这里用平滑后的行笔速度推断提笔量：
+     速度越高 → deff 越低 → 外圈毛陆续离纸 → 笔画自然越来越细（不是整条等比例缩小）。*/
+  const spd = S.vAcc / dtRaw; S.vAcc = 0;
+  S.vs += (spd - S.vs) * Math.min(1, 10*dt);
+  /* V₁ 与 L 幅度由 §7 校准给出个人值（未校准时为 1，退化成通用阈值） */
+  const V0 = W*SPD0, V1 = W*SPD1*S.V1m;
+  const rawLift = Math.max(0, Math.min(1, (S.vs - V0)/Math.max(1,V1-V0)));
+  /* ---- 转锋提笔（书法常识：「转锋必提」）----
+     方向变化期间速度必然掉（这是转的代价）—— 若只按「慢=按」映射，折角会被
+     按成一个墨团（用户截图：折角堆成一坨 + 一圈圈同心弧）。真实毛笔转锋是
+     **提笔圆转**：转向期间速度掉 → 笔提起 → 截面收细 → 折角干净。
+     只在「本笔确实有过速度」时启用（_vTop 有值），点按/顿笔不受影响。 */
+  let rawLift2 = rawLift;
+  const turnNow = peekTurn();
+  if(turnNow > 0.25 && turnNow < 2.0 && (S._vTop||0) > W*0.15){
+    /* 提度再加强（实测 0.40 保底太弱：折角只收 7% 宽，用户截图那坨照鼓）：
+       0.65 保底 → speedF 0.74 → 宽收 ~26%，折肩回到行笔宽度水平（雁塔折角
+       本就是「提笔圆转再折下」，不比横宽）。 */
+    const slowF = 0.65 + 0.35*Math.max(0, 1 - S.vs/(0.80*(S._vTop||1)));
+    rawLift2 = Math.min(1, Math.max(rawLift, slowF));
+  }
+  /* ---- 「先看行笔，再定收笔」----
+     无压感设备的宽度来自 §7 的速度映射：慢 = 按得重。笔画中段这是对的（慢行按笔），
+     但收笔时错 —— 减速被当成加压，尾段比行笔段还宽，鼓出一个「蝌蚪肚」。
+     物理上正确的表述是：**减速时不许把已经提起来的笔又按回去**。
+     所以给提按量加一条不对称速率限制（上升立即、回落 ≤1%/帧 ≈ 1.7s 到底）：
+     收笔那 0.3~0.8s 的减速里笔压保持在行笔时的水平，剩下的收细交给几何锥度。
+     途中故意顿笔不受影响（走 turnBoost / 驻笔积墨通道）。 */
+  const liftPrev = S.liftAmt;
+  /* 提笔用快收敛（转锋只有几帧，慢收敛到不了位）、回落保持慢（防蝌蚪肚） */
+  const convK = (rawLift2 > S.liftAmt) ? Math.min(1, 24*dt) : Math.min(1, 10*dt);
+  S.liftAmt += (rawLift2 - S.liftAmt) * convK;
+  /* 折锋窗口冻结提按量：**只挡回落**（折角减速≠加压，防折角鼓包）——
+     但转锋提笔（rawLift2 提升）必须穿透冻结保留：写成 = liftPrev 会把提升
+     同帧按平，折角照鼓（用户截图那坨墨）。max(liftPrev, 当前) = 升保留、降冻住。 */
+  if(S._turnHold) S.liftAmt = Math.max(liftPrev, S.liftAmt);
+  /* 解冻帧直接对齐当前速度映射：冻结期存的是「转锋瞬间」的提按残留（横的快行值），
+     若走 0.004/帧的慢回落（1.7s），折后竖的头一百多帧都会带着这个残留 → 竖上段细、
+     下段粗（切角版实测 19.5 vs 41.5）。转锋一结束，宽度立刻按新速度走。 */
+  else if(S._turnJustReleased){ S.liftAmt = rawLift2; S._turnJustReleased = false; }
+  /* 回落速率限制只在「正在写的行笔/收笔减速」时生效 —— 它保护的是收笔那
+     0.3~0.8s（减速≠加压，防止尾段鼓出蝌蚪肚）。真正停笔（idleT > 0.10s）
+     或两笔之间（drawing=false）都是顿笔/思考，笔压该回到当前按压；
+     不放开这条 4 秒 recovery，停顿后甚至下一笔开头都要细满 4 秒
+     （用户实测「会卡出来字迹后续不会再变粗」）。 */
+  const decel = S.drawing && S.idleT <= 0.10;
+  if(S.liftAmt < liftPrev && decel) S.liftAmt = Math.max(S.liftAmt, liftPrev - 0.004);
+  /* 演示按关键帧给定了提按；压感笔有真实压力 → 两种情况下都不用速度推断 */
+  const useSpeed = S.autoSpeed && !demo && !(S.penPress && S._penSeen);
+  /* S.Lm 是 §7 拟合出的个人提按幅度倍数（未校准 = 1），
+     S.speedLift 仍是用户手拨的「疾扫提笔强度」滑块 → 两者相乘，
+     自动校准给基准，手动滑块做微调，互不覆盖。 */
+  const speedF = useSpeed ? (1 - LIFTMAX*S.liftAmt*S.Lm*S.speedLift) : 1;
+  if(usesPenPressure()){
+    advancePenDepth(now/1000);
+    S.deff = S.drawing ? S.D : 0;
+  } else if(S.engine !== 'physics'){
+    /* ---- Procreate 管线（A4 双极线性速度映射 + A5 Response 低通）----
+       不用 liftAmt 的非对称限速/封顶（那是自研物理的收笔保护），
+       也不用 turnBoost（折肩是物理形态语言）。 */
+    const vN = Math.min(1, S.vs/(W*PC.vFull));
+    const pcF = useSpeed ? (1 - PC.speedK*vN) : 1;
+    if(S._pcP === undefined) S._pcP = S.D;
+    S._pcP += (S.D - S._pcP)*Math.min(1, dt/PC.respTau);
+    S.deff = Math.max(0.006, S._pcP * lf * pcF * S.flickFade);
+  } else {
+  /* 下限原为 0.02 —— 对应笔尖半径约 1.7px，出锋末端永远拖着一个小圆头，
+     就是「抬笔不彻底」。降到 0.006（半径 ≈0.6px）后末端才真正收成尖；
+     再往下没有毛接触纸，stampInk 里 cN=0 直接返回，等于自然离纸。 */
+  /* S.turnBoost：§10.4 前瞻到「即将折锋」时提前加压顿出肩（>1），直行时为 1。 */
+  S.deff = Math.max(0.006, S.D * lf * speedF * S.flickFade * S.turnBoost);
+  }
+  /* 调试探针：把 deff 的各个因子摊开（无头回归读它定位异常倍率；复用对象免每帧分配） */
+  const dbg = S._dbg || (S._dbg = {});
+  dbg.D=S.D; dbg.lf=lf; dbg.speedF=speedF; dbg.fade=S.flickFade; dbg.tb=S.turnBoost; dbg.vs=S.vs;
+  dbg.moves=(S._moves||0); dbg.turn=(S.drawing?peekTurn():0); dbg.kind=S.turnKind; dbg.vAcc=S.vAcc; dbg.dt=dt;
+  S._moves = 0;
+  S.liftShown = useSpeed ? S.liftAmt*S.Lm*S.speedLift : 0;   // 读数：个人映射后的实际提按量
+
+  /* 转锋角目标：演示 > 自动往复 > 手动滑杆 */
+  let phiTarget;
+  if(demo && demo.kind!==undefined) phiTarget = (S.phiDemo||0)*Math.PI/180;
+  else if(S.autoPhi) phiTarget = (S.phiAmp*Math.PI/180)*Math.sin(2*Math.PI*S.phiHz*tSim);
+  else phiTarget = S.phiUi*Math.PI/180;
+  const dphiFrame = phiTarget - S.phi;
+
+  const NS=4, sdt=dt/NS;
+  S._accE=0;
+  for(let i=0;i<NS;i++){
+    stepPhysics(sdt, dphiFrame/NS);
+    S._peak = Math.max(S._peak, Math.abs(S.R));   // R 带符号（回环在正负两侧），取幅值
+    S._accE += S._lastDiss;
+  }
+  S._strokeE = S._strokeE + S._accE;
+  S.phi = phiTarget;
+
+  /* 回环耗散：方向反转时结算一次 */
+  if(Math.abs(dphiFrame) > 1e-5){
+    if(S.phiPrev!==0 && Math.sign(dphiFrame)!==Math.sign(S.phiPrev)){
+      S.lastLoop = Math.round(S.loopAcc); S.loopAcc = 0;
+    }
+    S.phiPrev = dphiFrame;
+  }
+  S.loopAcc += S._accE;
+
+  /* 正常书写时墨迹由 flushInk 延迟落纸，这里只处理两条不走队列的路径：
+       · 演示（不走 pointermove）
+       · 驻笔（队列已空、本帧无新位移 → 积墨变浓 / 洇墨）
+     出锋也走这条：笔尖由 stepAutoLift 自己推进。 */
+  /* 出锋那一支把「本帧起点压深」传给 stampInk 做段内插值（f.dFrom），
+     针尾宽度才连续；demo / 驻笔那两支不传（dFrom 退化为 S.deff，行为不变）。
+     落墨后把本帧末值写回 f.dFrom —— 它就是下一帧的段起点。 */
+  if(!usesPenPressure() && S.drawing && (demo || S.flick || (inkQ.length === 0 && !S._fresh))){
+    stampInk(S.px, S.py, S.x, S.y, S.taperNow, 0, 0, 0, S.flick ? S.flick.dFrom : undefined, S._smoothNow||0);
+    if(S.flick) S.flick.dFrom = S.deff;
+  }
+  /* 出锋由 stepAutoLift 推进笔尖，必须逐帧落墨（S.flick 那一支） */
+  if(usesPenPressure() && S.drawing && Math.abs(S.deff-S._penStampedD) > 1e-10){
+    stampInk(S.x,S.y,S.x,S.y,1,0,0,0,S._penStampedD,S._smoothNow||0);
+  }
+  flushInk(false);
+  S._fresh = false;
+
+  /* 曲线采样 */
+  S.traceT.push([S.phi*180/Math.PI, S.R]);
+  if(S.traceT.length>1500) S.traceT.shift();
+  S.traceP.push([S.D, S.P]);
+  if(S.traceP.length>1200) S.traceP.shift();
+
+  render();
+  if(tick%2===0) drawTip();
+  if(tick%2===0) drawChart();
+  if(tick%6===0) syncReadouts();
+  requestAnimationFrame(loop);
+}
+
+/* =========================================================
+   12. 读数与面板
+   ========================================================= */
+const $ = id => document.getElementById(id);
+function syncReadouts(){
+  const Tv = Math.abs(S.Te)+Math.abs(S.Tf)+1e-6;
+  $('o-R').textContent = Math.round(Math.abs(S.R));
+  $('bar-e').style.width = Math.min(100, Math.abs(S.Te)/Tv*100)+'%';
+  $('bar-f').style.width = Math.min(100, Math.abs(S.Tf)/Tv*100)+'%';
+  $('o-P').textContent = Math.round(S.P);
+  $('o-N').textContent = S.cN+'/'+B.length;
+  $('o-Te').textContent = Math.round(S.Te);
+  $('o-Tf').textContent = Math.round(S.Tf);
+  $('o-S').textContent = Math.round(S.sN/Math.max(1,S.cN)*100)+'%';
+  $('o-L').textContent = S.lagAvg.toFixed(1)+'°';
+  $('o-ST').textContent = S.cN===0 ? '离纸'
+                      : (S.sN/Math.max(1,S.cN) > 0.5 ? '滑移为主' : (S.sN>0 ? '黏滑混合' : '全黏着'));
+  $('o-E').textContent = S.lastLoop || Math.round(S.loopAcc);
+  $('o-ph').textContent = Math.round(S.phi*180/Math.PI)+'°';
+  $('o-ps').textContent = Math.round(S.psi)+'°';
+  $('o-d').textContent = S.D.toFixed(2);
+  $('o-th').textContent = Math.round(S.theta)+'°';
+  /* 笔法：姿态层面的简化判定 —— 笔杆近竖直=中锋（压力对称、落墨为圆），
+     明显倾侧=侧锋（压力偏斜、截面扁长且偏向一侧） */
+  $('o-FA').textContent = S.theta < 12 ? '中锋' : ('侧锋 '+Math.round(S.theta)+'°');
+  /* 显示 §7 校准后的实际提按量（含个人幅度 L_m 与手动滑块），不是裸 liftAmt */
+  const lift = demo ? 0 : Math.round((S.liftShown||0)*100);
+  $('o-SL').textContent = lift>1 ? ('-'+lift+'%') : (S.autoSpeed?'待触发':'关');
+  /* 出锋期间临时接管「接触状态」读数，让鼠标用户看见收笔确实发生了；
+     其余时候保留上面更重要的黏滑判定（滑移为主 / 黏滑混合 / 全黏着）。 */
+  if(S.flick) $('o-ST').textContent = '出锋中';
+  $('o-DE').textContent = S.deff.toFixed(2)+' / '+S.D.toFixed(2);
+  $('o-TS').textContent = S.tiltSrc==='sensor' ? '笔杆传感器'
+                        : (S.autoTilt ? '中锋默认' : '手动滑杆');
+  /* 拖曳形变读数：驻笔 1.00（正圆），行笔后被拖成前缩后长 */
+  const tD = DRAG_MAX*Math.min(1, S.vs/(W*DRAGV));
+  /* §10.4 转折预判结果：让用户在读数里看见「引擎认为下一步要做什么」 */
+  $('o-TK').textContent = (S.turnKind==='直行') ? '直行'
+                        : (S.turnKind + ' ×' + (S.turnBoost||1).toFixed(2));
+  $('o-DR').textContent = tD<0.02 ? '1.00' : ((1-0.42*tD).toFixed(2)+' / '+(1+0.95*tD).toFixed(2));
+  $('o-MU').textContent = '×'+PAPERS[S.paper].mu.toFixed(2);
+  /* 墨量双向同步：书写自动消耗 → 滑杆与读数跟随；用户拖动滑杆仍可手动设定 */
+  const sk=$('s-ink');
+  if(document.activeElement!==sk) sk.value=S.ink;
+  $('o-ink').textContent = Math.round(S.ink*100)+'%';
+  /* 这三条原本是「死的」—— HTML 里写死初始值，脚本从不更新，
+     拖滑杆数字不变。现在统一在这里联动（setSlider 被演示驱动时也会跟着走）。 */
+  $('o-pa').textContent = Math.round(S.phiAmp)+'°';
+  $('o-pf').textContent = S.phiHz.toFixed(2)+' Hz';
+  $('o-ab').textContent = Math.round(S.absorb*100)+'%';
+  /* 提示阈值 0.15 → 0.30：飞白约在墨量 22% 出现，原先到 15% 才提醒已经来不及，
+     用户会觉得「明明还有墨怎么就断了」。提前到 30% 就亮蘸墨按钮。 */
+  $('btn-dip').style.boxShadow = S.ink<0.30 ? '0 0 0 2px rgba(168,52,42,.5)' : '';
+  $('hint').hidden = !!S.hasInk;
+  renderCompare();
+}
+function renderCompare(){
+  const keys=['yang','jian','lang','zi'];
+  let maxP=1, maxL=1;
+  const data = keys.map(k=>{ const e=estimate(k); maxP=Math.max(maxP,e.peak); maxL=Math.max(maxL,e.lag); return {k:k,e:e}; });
+  const pEl=$('cmp-peak'), lEl=$('cmp-lag');
+  pEl.innerHTML = data.map(d=>
+    '<div class="crow"><span>'+MATS[d.k].name+'</span><span class="track"><i class="fill" style="width:'+
+    Math.round(d.e.peak/maxP*100)+'%;background:var(--zhu)"></i></span><em>'+Math.round(d.e.peak)+'</em></div>').join('');
+  lEl.innerHTML = data.map(d=>
+    '<div class="crow"><span>'+MATS[d.k].name+'</span><span class="track"><i class="fill" style="width:'+
+    Math.round(d.e.lag/maxL*100)+'%;background:var(--qing)"></i></span><em>'+d.e.lag.toFixed(0)+'°</em></div>').join('');
+}
+function renderStats(){
+  const el=$('stats-wrap');
+  if(!S.stats.length){ el.innerHTML='<p class="empty">还没有笔画。写一笔或跑一次演示，这里会记录峰值阻力与耗散能量。</p>'; return; }
+  let html='<table class="stats"><thead><tr><th>#</th><th>峰值阻力</th><th>耗散能量</th></tr></thead><tbody>';
+  S.stats.forEach(s=>{ html+='<tr><td>第 '+s.i+' 笔</td><td>'+s.peak+'</td><td>'+s.e+'</td></tr>'; });
+  el.innerHTML = html+'</tbody></table>';
+}
+function setSlider(id,val){ const el=$(id); if(!el) return; el.value=val; }
+/* 笔尖分层图例：把「这根笔是什么毛拼的」直接写出来 */
+function renderLayers(){
+  const lay = MATS[S.mat].layers, h0 = HAIR[lay[0]], h1 = HAIR[lay[1]];
+  let c0=0, c1=0;
+  for(let i=0;i<B.length;i++){ if(B[i].layer===0) c0++; else c1++; }
+  let html;
+  if(lay[0]===lay[1]){
+    html = '<li><i style="background:'+h0.tint+'"></i>全'+h0.name+' · '+B.length
+         + ' 根 · EI '+h0.EI.toFixed(2)+' · 蓄墨 ×'+h0.cap.toFixed(2)+'</li>';
+  } else {
+    html = '<li><i style="background:'+h0.tint+'"></i>笔柱（心毫）'+h0.name+' · '+c0
+         + ' 根 · EI '+h0.EI.toFixed(2)+'（成锋、抗弯）</li>'
+         + '<li><i style="background:'+h1.tint+'"></i>外圈（被毫）'+h1.name+' · '+c1
+         + ' 根 · EI '+h1.EI.toFixed(2)+' · 蓄墨 ×'+h1.cap.toFixed(2)+'</li>';
+  }
+  html += '<li><i style="background:#CFC9BC"></i>未触纸时显示为对应毛料的淡色</li>';
+  html += '<li>毛数合计 <b>'+B.length+'</b> 根（10 环 · 径向等距 · 环上毛数 ∝ r → 截面铺满）</li>';
+  $('layer-legend').innerHTML = html;
+}
+function clearInk(){
+  ictx.clearRect(0,0,W,H); S.traceT.length=0; S.traceP.length=0; S.hasInk=false;
+  inkQ.length = 0; trail.length = 0;                 // 清屏要连延迟队列一起清，否则会冒出旧笔画
+  S.turnBoost = 1; S.turnTgt = 1;
+}
+
+/* =========================================================
+   13. 交互绑定
+   ========================================================= */
+// 材质
+const matsEl = $('mats');
+Object.keys(MATS).forEach(k=>{
+  const btn=document.createElement('button');
+  btn.className='mat'; btn.type='button';
+  btn.setAttribute('aria-pressed', k===S.mat ? 'true':'false');
+  btn.innerHTML='<b>'+MATS[k].name+'</b><s>'+MATS[k].tag+'</s>';
+  btn.addEventListener('click',()=>{
+    S.mat=k;
+    applyMaterial(k);                       // 换笔 = 换毛料配比（心毫 / 被毫 重新赋值）
+    Array.prototype.forEach.call(matsEl.children, c=>c.setAttribute('aria-pressed','false'));
+    btn.setAttribute('aria-pressed','true');
+    S.traceT.length=0; S.traceP.length=0;
+    for(let i=0;i<B.length;i++) B[i].lag=0;
+    renderLayers();
+  });
+  matsEl.appendChild(btn);
+});
+// 纸张生熟度：影响洇墨、边缘毛糙、耗墨速率、毛–纸摩擦（转锋阻力）、纸面纹理
+const papersEl = $('papers');
+Object.keys(PAPERS).forEach(k=>{
+  const btn=document.createElement('button');
+  btn.className='mat'; btn.type='button';
+  btn.setAttribute('aria-pressed', k===S.paper ? 'true':'false');
+  btn.innerHTML='<b>'+PAPERS[k].name+'</b><s>'+PAPERS[k].tag+'</s>';
+  btn.addEventListener('click',()=>{
+    S.paper=k;
+    Array.prototype.forEach.call(papersEl.children, c=>c.setAttribute('aria-pressed','false'));
+    btn.setAttribute('aria-pressed','true');
+    buildTexture();                          // 纸纤维纹理随生熟度变
+    S.traceT.length=0; S.traceP.length=0;    // 纸面涩度变了 → 阻力回环要重新采
+  });
+  papersEl.appendChild(btn);
+});
+// 滑杆
+const BIND = [['s-d','D',v=>parseFloat(v),2],['s-th','theta',v=>parseFloat(v),0],
+              ['s-ps','psi',v=>parseFloat(v),0],['s-ph','phiUi',v=>parseFloat(v),0],
+              ['s-pa','phiAmp',v=>parseFloat(v),0],['s-pf','phiHz',v=>parseFloat(v),2],
+              ['s-ink','ink',v=>parseFloat(v),2],['s-ab','absorb',v=>parseFloat(v),2],
+              ['s-sl','speedLift',v=>parseFloat(v),2],
+              ['s-taper','taperLen',v=>parseFloat(v),0],['s-stream','stream',v=>parseFloat(v),2],
+              ['s-mf','mfDz',v=>parseFloat(v),1]];
+BIND.forEach(function(b){
+  const el=$(b[0]);
+  const upd=()=>{ S[b[1]] = b[2](el.value); if(b[1] === 'D') S._manualDepth = S.D; };
+  el.addEventListener('input',upd); upd();
+});
+/* 收笔锥长 / 流线 / 抖振死区 的读数 */
+(function(){
+  const tp = $('o-tp'), st = $('o-st'), mf = $('o-mf');
+  const upd = () => {
+    tp.textContent = Math.round(S.taperLen)+'px';
+    st.textContent = Math.round(S.stream*100)+'%';
+    mf.textContent = S.mfDz.toFixed(1)+'px';
+  };
+  $('s-taper').addEventListener('input',()=>{ S.taperLen = parseFloat($('s-taper').value); upd(); });
+  $('s-stream').addEventListener('input',()=>{ S.stream = parseFloat($('s-stream').value); upd(); });
+  $('s-mf').addEventListener('input',()=>{ S.mfDz = parseFloat($('s-mf').value); upd(); });
+  upd();
+})();
+$('c-auto').addEventListener('change',e=>{
+  S.autoPhi=e.target.checked;
+  $('s-ph').disabled = S.autoPhi;
+  if(!S.autoPhi) S.phiUi = parseFloat($('s-ph').value);
+  S.traceT.length=0;
+});
+/* 算法引擎切换：自研物理 ↔ Procreate 复刻（依据 _tools/_procreate_research.md） */
+$('c-engine').addEventListener('change',e=>{
+  S.engine = e.target.value;
+  /* 清掉物理形态状态，避免两套状态机串味（回锋/趯/折肩/转弯锁存都只属于物理模式） */
+  S.tapOn=false; S.tapS=0; S.huiFeng=false; S.hookOut=false; S.revAt=undefined;
+  S._turnLatch=false; S._zheArmed=false; S._flyRev=false;
+  calNote(S.engine==='procreate'
+    ? '已切换到 Procreate 算法：Touch Taper 起收锥 + StreamLine 平滑 + 双极速度映射（复刻版）'
+    : '已切换到自研物理算法：笔毛动力学 + 收笔锥度 + 折肩/趯形态', false);
+});
+/* 自动倾斜 / 笔压驱动 开关 */
+$('c-tilt').addEventListener('change',e=>{
+  S.autoTilt=e.target.checked;
+  $('s-th').disabled = S.autoTilt; $('s-ps').disabled = S.autoTilt;
+});
+$('c-press').addEventListener('change',e=>{
+  S.penPress=e.target.checked;
+  if(!S.penPress){
+    S.D = S._manualDepth === undefined ? 0.34 : S._manualDepth;
+    setSlider('s-d',S.D);
+  }
+});
+$('c-speed').addEventListener('change',e=>{ S.autoSpeed=e.target.checked; });
+$('c-lift').addEventListener('change',e=>{ S.autoLift=e.target.checked; });
+$('btn-cal').addEventListener('click',calBegin);
+$('btn-cal-clear').addEventListener('click',calClear);
+if(calLoad()){ calRenderResult(); calNote('已载入本机上次的校准结果（V₁×'+S.V1m.toFixed(2)+' · L×'+S.Lm.toFixed(2)+'）', false); }
+else calRenderResult();
+$('s-sl').addEventListener('input',()=>{ $('o-sl').textContent = Math.round(parseFloat($('s-sl').value)*100)+'%'; });
+$('s-th').disabled = true; $('s-ps').disabled = true;   // 默认自动倾斜开启，滑杆只作读数
+$('s-ph').disabled = S.autoPhi;
+$('s-ph').addEventListener('input',()=>{ if(!S.autoPhi){ S.traceT.length=0; } });
+$('btn-dip').addEventListener('click',dipInk);
+$('btn-clear').addEventListener('click',()=>{ clearInk(); S.stats=[]; S.counter=0; renderStats(); S.lastLoop=0; S.loopAcc=0; for(let i=0;i<B.length;i++) B[i].lag=0; });
+Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function(b){
+  b.addEventListener('click',()=>{
+    S.chartTab=b.getAttribute('data-tab');
+    Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), x=>x.setAttribute('aria-pressed', x===b ? 'true':'false'));
+    ymax = 60;
+    $('chart-note').textContent = S.chartTab==='tor'
+      ? '回环所围面积 = 一次往复耗散的能量 = 手感上的「阻力 / 黏滞」。'
+      : '按下去硬、提起来软 → 形成「提按迟滞」，这就是顿笔/收锋时的手感来源。';
+  });
+});
+Array.prototype.forEach.call(document.querySelectorAll('[data-demo]'), function(b){
+  b.addEventListener('click',()=>{ startDemo(b.getAttribute('data-demo')); });
+});
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'){ e.preventDefault(); dipInk(); }
+});
+
+// 书写区
+let down=false, activePointerId=null;
+function loc(e){
+  const r=paperCv.getBoundingClientRect();
+  return { x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height) };
+}
+/* 角度按最短弧插值，避免 ±180° 处跳变 */
+function angLerp(cur,tgt,k){ let d=((tgt-cur+540)%360)-180; return cur+d*k; }
+/* 位置和压力成对处理，禁止使用上一帧或上一笔的粗细画当前采样。 */
+function readPenInput(e, initial){
+  /* pointerType 不是唯一判据（见 penChannel）：_ptr 已在 pointerdown 归一成 'pen'，
+     这里放行「_ptr 已是 pen」的事件，否则压感通道在误报 pointerType 的浏览器里
+     整个读不进来（S.D 永远是 0 → 没有墨）。 */
+  if(S._ptr !== 'pen') return;
+  const time = Number.isFinite(e.timeStamp) ? e.timeStamp/1000 : nowSec();
+  const dt = initial || S._penTime === undefined ? 1/240 : Math.max(0.001,time-S._penTime);
+  S._penTime = time; S._penDt = dt;
+  if(S.autoTilt){
+    let th=null, ps=null;
+    const altitudeOK = Number.isFinite(e.altitudeAngle) && e.altitudeAngle > 0 && e.altitudeAngle <= Math.PI/2;
+    const tiltOK = Number.isFinite(e.tiltX) && Number.isFinite(e.tiltY)
+      && Math.abs(e.tiltX) <= 90 && Math.abs(e.tiltY) <= 90;
+    // 一笔内固定使用同一套角度字段，缺失采样维持上值，避免两套坐标系来回跳。
+    if(initial) S._penTiltSource = altitudeOK ? 'altitude' : (tiltOK ? 'tilt' : null);
+    if(S._penTiltSource === 'altitude' && altitudeOK){
+      th=90-e.altitudeAngle*180/Math.PI;
+      if(Number.isFinite(e.azimuthAngle)) ps=e.azimuthAngle*180/Math.PI;
+    } else if(S._penTiltSource === 'tilt' && tiltOK){
+      th=Math.hypot(e.tiltX,e.tiltY);
+      ps=Math.atan2(-e.tiltY,e.tiltX)*180/Math.PI;
+    }
+    if(th !== null){
+      const gain=initial ? 1 : -Math.expm1(-dt/PEN_TILT_RESPONSE);
+      const maxStep=initial ? 70 : 240*dt;
+      S.theta += Math.max(-maxStep,Math.min(maxStep,(Math.min(70,th)-S.theta)*gain));
+      // 近竖直时方位角没有稳定意义，不把它的抖动带到侧锋形状里。
+      if(ps !== null && th > 3){
+        const da=((ps-S.psi+540)%360)-180;
+        S.psi += Math.max(-360*dt,Math.min(360*dt,da*gain));
+        if(initial) S.psi=ps;
+      }
+      S.tiltSrc='sensor';
+      setSlider('s-th',S.theta); setSlider('s-ps',S.psi);
+    }
+  }
+  if(S.penPress && Number.isFinite(e.pressure)){
+    /* ================= Apple Pencil 压力采样加固（2026-10-23）=================
+       症状（用户截图）：落笔之后**粗细不随压力变化**，且笔画上出现**一串墨点**。
+       根因：iPad Safari 的 getCoalescedEvents() 会偶发交出 pressure=0 的中间点
+       （真实值只挂在主事件上）。旧写法无条件 pressureDepth(0)=0 →
+       S.D 当场塌到 0 → 这一段被画成发丝；下一个采样又恢复正常 →
+       笔画在「极细」与「正常」之间逐事件跳变。跳变处 nSafe 的章距兜底
+       来不及补，就露出一颗颗孤立的大章 = 墨点。
+       两道保护（都只在 penPress 为真时执行，鼠标通路一行不改）：
+         ① 本笔已见过有效压力后，0 值视为「本次采样无效」→ 保持上一次目标；
+         ② 若某设备**始终**不上报压力（全是 0），12 个采样后改用速度合成，
+            至少让粗细随书写变化，而不是一条死细线。 */
+    /* 坏采样判定**只看低端**：合并采样偶尔会丢出 pressure=0 的中间点（真实值挂主事件），
+       那个 0 会把压深当场打到 0 → 发丝/墨点。但**高压端绝不在此过滤** ——
+       旧写法误用 p<0.999 把满按当坏点丢掉，导致越使劲越不更新目标（用户反馈「粗细不变」）。
+       现在：只有 pRaw≤0.002（低到接近 0）才算可疑，满按 0.9~1.0 照常驱动宽度。 */
+    const pRaw = e.pressure;
+    const badLow = pRaw <= 0.002;                 // 只有「低到 0」的采样才可疑
+    if(!badLow) S._penPSeen = true;               // 见到任何真实压力 → 本笔压感通路正常
+    let pUse = pRaw;
+    if(badLow && S._penPSeen){
+      /* 本笔已见真压力、此刻却是 0 → 合并采样的坏点。保持上一帧目标，不更新。 */
+      setSlider('s-d',S.D);
+      stepPhysics(Math.max(1/1000,dt),0);
+      return;
+    }
+    if(badLow){
+      /* 本笔从头到尾都是 0（该设备根本不上报压感）：12 个采样后改用速度合成，
+         至少让粗细随书写变化，而不是一条死细线。 */
+      S._penN = (S._penN||0) + 1;
+      if(S._penN > 12){
+        const vN = Math.min(1, (S._vNow||0)/(W*0.9));
+        pUse = Math.max(0.18, 0.72 - 0.42*vN);
+      }
+    }
+    const target=pressureDepth(pUse);
+    S._penTargetD=target;
+    /* 本笔压深峰值：快提补锥判据用（抬笔时 D 与目标的差 = 滞后没跑完的宽度） */
+    S._penDtop = initial ? target : Math.max(S._penDtop||0, target);
+    if(initial){
+      // 首个读数即使偏大，也先让最尖的一点触纸，再连续响应实际力度。
+      S.D=firstPenDepth(target); S.deff=S.D; S._penDepthAt=time;
+    } else advancePenDepth(time);
+    setSlider('s-d',S.D);
+    stepPhysics(Math.max(1/1000,dt),0);
+  }
+}
+paperCv.addEventListener('pointerdown',e=>{
+  if(e.button!==0) return;
+  /* 已经在写了 → 忽略后来的指针（iPad 手掌误触会产生第二个 pointerdown，
+     把校准采样记录重置成 1 个点，抬手时就报「样本太短」）。 */
+  if(down) return;
+  paperCv.setPointerCapture(e.pointerId);
+  activePointerId = e.pointerId;
+  demo=null; down=true; S.drawing=true; S._peak=0; S._strokeE=0;
+  S._sl=0; S.touchT=TOUCH;                                    // 新笔：入笔渐入 + 链重置
+  /* 起笔渐入的弧长预算按笔宽定（必须在 _wSum/_wN 清零之前取值 —— 那之后只剩默认 20） */
+  S.touchL=Math.max(4, 0.8*bodyRadiusHint());
+  S.liftT=0;                                                  // 取消上一笔残留的提笔回弹，否则起笔被压成发丝
+  S.dotAcc=0; S.bleedN=0; S.stamp0=false; S.vAcc=0; S.vs=0; S.liftAmt=0;
+  /* §5.4 收锋状态复位：起新笔就取消上一笔的出锋残留 */
+  S.idleT=0; S.strokeLen=0; S.flick=null; S.flickFade=1;
+  S._maxR = 0; S._wSum = 0; S._wN = 0; S._dragE = undefined; S._dLP = undefined;
+  S.taperNow = 1; S.tapOn = false; S.tapS = 0; S.tapL = 60; S.tapD = 0; S.tapDrag = 0; S._vTop = 0; S._tPrev = undefined;
+  S.netX = 0; S.netY = 0; S.huiFeng = false; S.revAt = undefined; S.revA0 = undefined; S.entryRamp = undefined; S.hookOut = false;
+  S._turnLatch = false;                                        // 转弯锁存不跨笔：新笔画从零开始判定收笔
+  S._turnJustReleased = false;                                 // 折后解冻标记 likewise
+  S._zheArmed = false;                                         // 折锋外拓 likewise
+  S._zheS = undefined; S._zheD0 = undefined;                   // 折角窗口（弧长标记/半径冻结）likewise
+  S._flyRev = false; S._hiVsN = 0;                             // 飞跃连带保护 likewise
+  S.tailCarry = 1; S.flickCarry = 1;             // 收笔锥度 / 出锋接续的基准复位
+  inkQ.length = 0; trail.length = 0;                 // 新笔：清掉上一笔的延迟残留
+  S.turnBoost = 1; S.turnTgt = 1;
+  /* 流线滤波锚点必须跟着新笔复位 —— 否则第一段位移是「上一笔终点 → 本笔起点」的
+     斜向空跳（抬手挪位置再落笔时每笔都会踩），后果是：
+     ① 笔程/速度凭空暴涨 → 假提笔 → 起笔发丝化；
+     ② 方向从上一笔末端突变过来 → 误判折锋 → turnBoost 冲 1.34 → 起笔凭空变粗。 */
+  S.fx = NaN; S.fy = NaN;
+  S._mx = NaN; S._my = NaN;                       // 死区行笔轴 likewise（否则起笔被上一笔方向掰弯）
+  for(let i=0;i<B.length;i++){ B[i]._wasC=false; }
+  if(e.pointerType === 'pen' && S._ptr !== 'pen') S._manualDepth = S.D;
+  if(e.pointerType !== 'pen' && S._ptr === 'pen'){
+    S.D = S._manualDepth === undefined ? 0.34 : S._manualDepth;
+    setSlider('s-d',S.D);
+  }
+  S._uxE=NaN; S._uyE=NaN; S._vNow=0;
+  S._ptr = e.pointerType;
+  S._penStampedD = -1; S._penTime = undefined; S._penMicro=null; S._penContour=null; S._penTargetD=0; S._penDepthAt=undefined;
+  S._penPSeen = false; S._penN = 0;   // 压力采样加固：本笔是否见过有效压力 / 无效采样计数
+  S._penStatT = undefined;            // 驻笔补章限频时间戳
+  /* 压感设备识别（penChannel：pointerType 或连续压力）。识别成功就把 _ptr 统一
+     改写成 'pen' —— 后面整条链路（readPenInput / makePenSample / 即时落墨）
+     都只看 _ptr，改这一处就全通；真实 pointerType 留在 _ptrRaw 里备查。 */
+  if(penChannel(e)){
+    S._ptrRaw = e.pointerType;
+    if(S._ptr !== 'pen') S._ptr = 'pen';
+    if(!S._penSeen){
+      S._penSeen=true; S.penPress=true; $('c-press').checked=true;
+      if(S._ptrRaw && S._ptrRaw !== 'pen')
+        calNote('已识别压感输入（浏览器报的是 "'+S._ptrRaw+'"，按连续压力判定）→ 走原生压感通路', false);
+    }
+  }
+  /* 鼠标 / 触控板没有倾角传感器 → 强制回到中锋 θ=0。
+     否则会沿用上一次留下的侧倾（尤其是演示跑完停在 θ=50~60°），
+     导致「点一个点」出来是椭圆而不是正圆。 */
+  if(S.autoTilt && !penChannel(e)){
+    S.theta=0; S.tiltSrc='none'; setSlider('s-th',0);
+  }
+  updPathNote();
+  const p=loc(e); S.x=S.px=p.x; S.y=S.py=p.y; S.v=0;
+  // pointerdown 的 0 也是真实压力；不沿用滑杆或上一笔的数值。
+  readPenInput(e,true);
+  if(penChannel(e)) resetPenSamples(e); else S._penInput=null;
+  if(usesPenPressure()){ S.fx=p.x; S.fy=p.y; }
+  if(usesPenPressure()) stampInk(p.x,p.y,p.x,p.y,1,0,0,0,0,S._smoothNow||0);
+  /* §7 采样起点。必须放在 p 定义之后 —— const 有暂时性死区，提前引用会抛 ReferenceError。
+     cal.rec 在这里「出生」，随后 pointermove 追加，up() 时结算。 */
+  if(cal.active){
+    cal.rec = { x:p.x, y:p.y, key:cal.key, pts:[[p.x, p.y, performance.now()/1000, 0]] };
+  }
+});
+/* ---------- 逐采样点喂入 ----------
+   iPad / Apple Pencil 的采样率远高于屏幕刷新率（Pencil 可达 240 Hz），
+   Safari 会把一帧内的多个采样合并进**一个** pointermove，只交出最终位置。
+   若直接用它，一段长位移只被盖一次印，印章间距被拉到超过笔尖直径
+   → 笔画断成「一个个墨点」。getCoalescedEvents() 能取回被吞掉的中间点。
+   每个点都立刻盖印，段长就回到采样间距，笔画自然连续。 */
+/* 收锋之后手指一动就自动开下一笔 —— 让「停顿 → 收锋 → 继续写」是连续的，
+   而不是必须松手重按。条件：确实按着、笔画已关、没在出锋、且移动够大（不是抖动）。 */
+function startNewStroke(){
+  S.drawing = true; S._peak = 0; S._strokeE = 0;
+  S._sl = 0; S.touchT = TOUCH; S.liftT = 0;
+  S.touchL = Math.max(4, 0.8*bodyRadiusHint());   // 同上：按上一笔的笔宽定弧长预算
+  S.dotAcc = 0; S.bleedN = 0; S.stamp0 = false;
+  S.strokeLen = 0; S.idleT = 0; S.flick = null; S.flickFade = 1;
+  /* 收笔形态必须随新笔清干净：revAt 是「弧长数值」，上一笔留下的数值在新笔
+     strokeLen 涨过它之后 revD 转正 → 钩形态在笔画中段被误激活（竖中段削出
+     20px 细腰，实测）。pointerdown 的复位清单里有这几项，自动开新笔漏了。 */
+  S.taperNow = 1; S.tapOn = false; S.tapS = 0; S._vTop = 0; S._tPrev = undefined;
+  S.huiFeng = false; S.hookOut = false; S.revAt = undefined; S.revA0 = undefined;
+  S.entryRamp = undefined; S._hiVsN = 0; S._flyRev = false;
+  S._turnLatch = false; S._turnHold = false; S._turnJustReleased = false;
+  S._zheS = undefined; S._zheD0 = undefined; S._turnPh = undefined;   // 折角/转角状态 likewise
+  S._maxR = 0; S._wSum = 0; S._wN = 0; S._dragE = undefined; S._dLP = undefined;
+  S.tailCarry = 1; S.flickCarry = 1;
+  S.turnBoost = 1; S.turnTgt = 1; trail.length = 0; inkQ.length = 0;
+  S.fx = NaN; S.fy = NaN;                       // 流线滤波在新笔上重新起步
+  S._mx = NaN; S._my = NaN;                     // 死区行笔轴 likewise
+  for(let i=0;i<B.length;i++){ B[i]._wasC = false; }   // 让笔毛重新蘸一次墨
+}
+function feedPoint(x, y, sample, tSec, penFrom){
+  S._moves = (S._moves||0) + 1;
+  /* 出锋还没走完用户就又落笔了 → 立刻结清上一笔（出锋委托的 endStroke 还没跑） */
+  if(down && S.flick){
+    S.flick=null; S.flickFade=1; S.drawing=false; S.liftT=LIFT; endStroke();
+  }
+  /* 上一笔已被自动收锋收掉，但手指还按着且又动起来了 → 开新笔 */
+  if(down && !S.drawing && !S.flick){
+    if(Math.hypot(x-S.x, y-S.y) > 2.5) startNewStroke();
+    else { S.x = x; S.y = y; S.px = x; S.py = y; return; }  // 只是抖动，先跟着走
+  }
+  /* ---- 流线（Procreate StreamLine）：位置朝「最近路径的加权平均」收敛 ----
+     手抖与采样抖动会让速度推断和扇区映射乱跳 —— 那是墨迹忽粗忽细的另一半原因。
+     0 = 关闭；越大越稳（代价是笔迹略滞后于笔尖）。校准模式跳过，免得污染用户节奏。 */
+  if(S.stream > 0.01 && !cal.active){
+    if(!isFinite(S.fx)){ S.fx = x; S.fy = y; }
+    const w = usesPenPressure()
+      ? -Math.expm1(-Math.max(0.001,S._penDt||1/240)/(0.004+0.016*S.stream))
+      : Math.max(0.18,1-S.stream);
+    S.fx += (x - S.fx)*w; S.fy += (y - S.fy)*w;
+    x = S.fx; y = S.fy;
+  } else { S.fx = x; S.fy = y; }
+  /* ---- Motion Filtering（Procreate 5.2）：垂直残差死区 ----
+     官方定义：「整段删除笔迹抖动的两端，不做平均、不压扁，任何速度下都成立」。
+     与上面的流线正交 —— 流线是移动平均，**沿行笔方向也**一起滞后（快线拖尾）；
+     死区只丢**侧向**残差：以「上一个落墨点 + 当前行笔方向」为轴，
+     把偏差落在轴上的分量整份保留、轴外的分量小于死区就归零。
+     于是直行段该走多快还走多快，只有左右摆动被削平（这是「不压扁」的含义）。
+     死区 MF_DZ0=1.6px：低于典型手抖幅度（1.5~3px），高于亚像素噪声；可关（滑杆归零）。
+     行笔轴用**专用**的 _mx/_my（α=0.2），不借给拖曳形变的 _uxE（α=0.5）——
+     轴跟得越紧，慢频率的手抖就越多地骗过死区（实测 3.8Hz 慢摆：α=0.5 只削 19%，
+     α=0.2 削 61%）。轴取自夹过之后的段方向 → 自稳定：夹得越干净，轴越不抖。 */
+  if(!usesPenPressure() && S.mfDz > 0 && !cal.active && S.strokeLen > 2 && isFinite(S._mx)){
+    const rx = x - S.x, ry = y - S.y;
+    const a  = rx*S._mx + ry*S._my;                // 沿行笔方向的分量 → 原样保留，不加任何滞后
+    const p  = rx*S._my - ry*S._mx;                // 垂直行笔方向的分量（带符号）
+    /* 死区夹在「侧向偏移量」上，不是夹在「每步增量」上：
+       笔迹跟着输入在 ±dz 的走廊里走 —— 输入在走廊内 → 笔迹侧向完全不动（抖振整段删掉）；
+       输入越出走廊 → 笔迹只补上「超出的那部分」（被夹掉的部分就是被削掉的抖振峰值）。
+       夹增量会导致「先冻住、再一次性跳回来」的锯齿（实测峰反而更大），夹偏移才对。
+       侧向残留恒 ≤ dz，沿轨位移零损耗 —— 这就是官方说的「不平均、不压扁」。 */
+    const dz = S.mfDz;
+    const pc = p > dz ? p - dz : (p < -dz ? p + dz : 0);
+    x = S.x + S._mx*a + S._my*pc;
+    y = S.y + S._my*a - S._mx*pc;
+  }
+
+  /* 距离对「上一个点」S.x 取，而不是 S.px —— S.px 是上一段的起点，
+     拿它算会跨两步、把速度算成约两倍。 */
+  const d = Math.hypot(x-S.x, y-S.y);
+  S.vAcc += d;
+  /* ---- 驻笔顿撤销收笔态（在 idleT 复位前判断）----
+     底顿驻笔被减速误判成收笔（tapOn）→ 竖底先收细再趔，视觉是一根向左下的细刺。
+     驻笔 0.06s 以上恢复书写 = 那是「顿」不是收笔；真要收笔的人会抬笔或持续慢动
+     （后者 idleT=0 不触发）。>0.15s 的停顿由 updateTaper 的 pause-reset 覆盖。 */
+  if(S.tapOn && S.idleT > 0.06){ S.tapOn = false; S.tapS = 0; S.huiFeng = false; S.hookOut = false; S.revAt = undefined; }
+  S.strokeLen += d;                                       // §5.4 本笔累计弧长
+  S.idleT = 0; S._idleAnchor = undefined;                 // 有位移 → 不是停笔（驻笔锚点一起作废）
+  if(sample && cal.active && cal.rec){
+    /* 校准采样只对「主事件」做：coalesced 子点共享同一时刻的时间戳，
+       拿它们算速度会得到 0 或无穷大。 */
+    const L = cal.rec.pts[cal.rec.pts.length-1][3] + d;
+    cal.rec.pts.push([x, y, (tSec === undefined ? performance.now()/1000 : tSec), L]);
+  }
+  if(d > 0.001){ S.ux=(x-S.x)/d; S.uy=(y-S.y)/d; }
+  /* 行笔方向 EMA（供拖曳形变）：折角处相邻段方向可差 40°+，水滴 warp 若用瞬时
+     方向会在折角几枚之间乱切 → 边缘锯齿（用户「转锋笔迹不干净」）。
+     EMA 后 warp 方向随折角渐变，斜切面才干净。 */
+  if(!isFinite(S._uxE)){ S._uxE=S.ux; S._uyE=S.uy; }
+  else if(usesPenPressure()){
+    // 沿笔程平滑方向角，避免短采样抖动或反向时向量相消后突然翻转。
+    if(d > 0.02){
+      const a=Math.atan2(S._uyE,S._uxE), b=Math.atan2(S.uy,S.ux);
+      const da=Math.atan2(Math.sin(b-a),Math.cos(b-a));
+      const angle=a+da*(-Math.expm1(-d/3));
+      S._uxE=Math.cos(angle); S._uyE=Math.sin(angle);
+    }
+  } else {
+    S._uxE += (S.ux-S._uxE)*0.5; S._uyE += (S.uy-S._uyE)*0.5;
+    const Le = Math.hypot(S._uxE,S._uyE) || 1; S._uxE/=Le; S._uyE/=Le;
+  }
+  /* 死区专用行笔轴（α=0.2 ≈ 5 段窗口）：比 _uxE 慢一档，慢频率手抖才骗不过死区。
+     每笔开头重置（见三个起笔点），免得上一笔的方向把新笔的起笔掰弯。 */
+  if(d > 0.001){
+    if(!isFinite(S._mx)){ S._mx=S.ux; S._my=S.uy; }
+    else {
+      S._mx += (S.ux-S._mx)*0.2; S._my += (S.uy-S._my)*0.2;
+      const Lm = Math.hypot(S._mx,S._my) || 1; S._mx/=Lm; S._my/=Lm;
+    }
+  }
+  /* 笔画「净方向」EMA + 方向掉头检测：
+     楷书收笔是**回锋**（右上顿笔后向左回收），笔画方向会掉头 ≈180°。
+     识别出来之后收笔不能收成尖、也不能甩出锋尾 —— 那是楷书横/竖的忌讳。 */
+  if(trail.length >= 3){
+    /* 用轨迹角度直接判「掉头」：当前段方向 vs 3 段前方向，差 >126° 即掉头。
+       比方向 EMA 可靠 —— 逆锋那点前进量（几 px）根本喂不动 EMA，会漏检。 */
+    let dd = Math.atan2(S.uy, S.ux) - trail[trail.length-3];
+    while(dd >  Math.PI) dd -= 2*Math.PI;
+    while(dd < -Math.PI) dd += 2*Math.PI;
+    if(Math.abs(dd) > 2.2){
+      if(S.revA0 === undefined) S.revA0 = S.strokeLen;
+      /* 记录「掉头前的原方向」——用来区分**钩**与**提**：
+         · 钩（趯）：竖画到底，向上（-90° 附近）挑出 → 收成尖
+         · 提（竖提，「以」左旁）：竖画到底，斜向右上（≈-30°~-50°）挑出
+           → 是**弹性转锋**，笔毛吸附纸面蓄力上弹，整束毛一起走，笔尖不崩
+         见 S._revA（弧度，掉头前方向）。 */
+      { let a0 = trail[trail.length-3]; S._revA = Math.atan2(Math.sin(a0), Math.cos(a0)); }
+      /* 掉头的两件事必须分开：
+         · _revd（撤收笔锥度）—— **无条件**：转向/飞跃都不是收笔，收笔的唯一
+           成立条件是抬笔。少了它，飞跃段会被收笔锥削成钢丝（实测 0.30）。
+         · revAt（钩形态）—— **锁存期不记**：折角之后的行进段里出现的「方向骤变」
+           是转锋余波不是掉头，误记会让钩形态在折后竖中段激活、削出 20px 细腰
+           （实测 rev#2: cur=90° vs t[n-3]=-98° 判成 172° 掉头）。
+           竖钩笔画本身无折角（turnLatch 从未置位），趯的掉头不受影响。 */
+      S._revd = true;
+      if(!S._turnLatch){
+        if(S.revAt === undefined) S.revAt = S.strokeLen;
+        if(S.tapOn) S.huiFeng = true;
+      }
+    }
+  }
+  S.v = d;
+  S.px = S.x; S.py = S.y;                                 // 段起点 = 上一点
+  S.x  = x;   S.y  = y;                                   // 段终点 = 本点
+  S._fresh = true;
+  /* 压感笔按本次采样即时落墨；无压感设备保留前瞻队列与模拟提按。 */
+  if(usesPenPressure()){
+    /* ---- 方向历史 trail：**只有 native 通路在此维护** ----
+       旧代码只在 pushSegment（鼠标/模拟通路）里 trail.push，原生压感通路直接落墨、
+       从不追加 → peekTurn() 恒返回 0（trail.length<2）→ 转锋检测、orthoZhe、
+       turnHold、updateSmooth 在 Apple Pencil 上**全部失效**。后果：竖提转弯
+       （总转角 120°、每样本仅 ~8°）既过不了 orthoZhe 的单段急转门卫，smooth 也拿不到
+       方向历史 → 拖曳形变满值、相邻章外缘错开层叠成扇形崩边，再被 Canvas2D 抗锯齿
+       一描 = 用户截图「毛笔的毛崩出去」那圈浅色（2026-10-23 竖提截图）。
+       **必须放在 native 分支内**：feedPoint 是两条通路共用的入口，放在外面会让
+       mouse 通路被 feedPoint + pushSegment 双重追加 → 方向序列错乱、
+       zheOutreach 的正交判据失效（实测斜切段长变 -，外拓整个不执行）。 */
+    {
+      const dx = x - S.px, dy = y - S.py;
+      if(dx*dx + dy*dy > 0.25){         // 同 pushSegment：忽略亚像素抖动
+        trail.push(Math.atan2(dy, dx));
+        if(trail.length > 12) trail.shift();
+      }
+    }
+    S.taperNow = 1;
+    updateSmooth();                      // trail 已追加，此处才能算出真实方向变化度
+    stampInk(S.px,S.py,S.x,S.y,1,0,0,0,penFrom,S._smoothNow||0);
+  } else {
+    pushSegment(S.px, S.py, S.x, S.y, updateTaper(d));
+  }
+}
+/* 压感笔坐标校验：先确认孤立跳点，再把位置与压力一起交给绘制。
+   常规位移即时通过；只有明显超出近期速度的位移暂存一个采样。
+   后一点若继续新方向，保留真实转折；若立刻回到原轨迹，丢弃孤立尖刺。 */
+function makePenSample(e, parent){
+  const base=parent||e;
+  const pointerType=e.pointerType||base.pointerType;
+  const pointerId=e.pointerId === undefined ? base.pointerId : e.pointerId;
+  /* _ptr 归一成 'pen' 之后一律放行（真实 pointerType 可能是 'touch'/''）；
+     只有「本笔已判定不是压感通道」时才拒。 */
+  if((S._ptr !== 'pen' && pointerType !== 'pen') || pointerId !== activePointerId) return null;
+  if(!Number.isFinite(e.clientX) || !Number.isFinite(e.clientY)) return null;
+  const fields=['pressure','altitudeAngle','azimuthAngle','tiltX','tiltY'];
+  const q={pointerType:'pen',pointerId:pointerId,clientX:e.clientX,clientY:e.clientY,
+    timeStamp:Number.isFinite(e.timeStamp) ? e.timeStamp : performance.now()};
+  for(const key of fields) q[key]=e[key] === undefined ? base[key] : e[key];
+  const p=loc(q);
+  q.x=p.x; q.y=p.y; q.time=q.timeStamp/1000;
+  return q;
+}
+function resetPenSamples(e){
+  const first=makePenSample(e);
+  S._penInput={last:first,seen:first,pending:null,speeds:[]};
+  S._penInputStats={stale:0,duplicate:0,foreign:0,spikes:0};
+}
+function recentPenSpeed(input){
+  if(!input.speeds.length) return 0;
+  const sorted=input.speeds.slice().sort((a,b)=>a-b);
+  return sorted[Math.floor(sorted.length/2)];
+}
+function commitPenSample(q){
+  const input=S._penInput, previous=input.last;
+  const oldDepth=S.deff;
+  readPenInput(q,false);
+  feedPoint(q.x,q.y,true,q.time,oldDepth);
+  if(previous){
+    const dt=q.time-previous.time;
+    if(dt>0 && dt<0.12){
+      input.speeds.push(Math.hypot(q.x-previous.x,q.y-previous.y)/dt);
+      if(input.speeds.length>7) input.speeds.shift();
+    }
+  }
+  input.last=q;
+}
+function suspiciousPenStep(input,q){
+  const a=input.last;
+  if(!a) return false;
+  const dt=Math.max(0.001,q.time-a.time);
+  if(dt>0.07) return false; // 停顿后的真实长距离运笔不按短时跳点处理。
+  const scale=W/REF;
+  const expected=recentPenSpeed(input)*dt;
+  return Math.hypot(q.x-a.x,q.y-a.y)>Math.max(8*scale,3*expected+2*scale);
+}
+function isolatedPenSpike(input,b,c){
+  const a=input.last;
+  if(!a) return false;
+  const dx=c.x-a.x, dy=c.y-a.y, chord=Math.hypot(dx,dy);
+  const ab=Math.hypot(b.x-a.x,b.y-a.y), bc=Math.hypot(c.x-b.x,c.y-b.y);
+  const t=chord>0 ? Math.max(0,Math.min(1,((b.x-a.x)*dx+(b.y-a.y)*dy)/(chord*chord))) : 0;
+  const off=Math.hypot(b.x-a.x-dx*t,b.y-a.y-dy*t);
+  const scale=W/REF, speed=recentPenSpeed(input);
+  const expected=speed*Math.max(0.001,b.time-a.time);
+  return off>Math.max(6*scale,1.5*expected)
+    && ab+bc>1.8*chord && bc>Math.max(4*scale,speed*Math.max(0.001,c.time-b.time)*1.5)
+    && chord<Math.max(20*scale,speed*Math.max(0.001,c.time-a.time)*3+4*scale);
+}
+function acceptPenSample(q){
+  const input=S._penInput;
+  if(!input || !q) return;
+  const seen=input.seen;
+  if(seen && q.time<seen.time){ S._penInputStats.stale++; return; }
+  if(seen && q.time===seen.time && q.clientX===seen.clientX && q.clientY===seen.clientY
+     && q.pressure===seen.pressure && q.altitudeAngle===seen.altitudeAngle
+     && q.azimuthAngle===seen.azimuthAngle && q.tiltX===seen.tiltX && q.tiltY===seen.tiltY){
+    S._penInputStats.duplicate++; return;
+  }
+  input.seen=q;
+  if(input.pending){
+    if(isolatedPenSpike(input,input.pending,q)) S._penInputStats.spikes++;
+    else commitPenSample(input.pending);
+    input.pending=null;
+  }
+  if(suspiciousPenStep(input,q)) input.pending=q;
+  else commitPenSample(q);
+}
+function finishPenSamples(e,cancelled){
+  const input=S._penInput;
+  if(!input || !input.pending) return;
+  const pending=input.pending, end=e ? makePenSample(e) : null;
+  if(!cancelled && (!end || !isolatedPenSpike(input,pending,end))) commitPenSample(pending);
+  else if(!cancelled) S._penInputStats.spikes++;
+  input.pending=null;
+}
+function feedPointerSample(e){
+  if(!Number.isFinite(e.clientX) || !Number.isFinite(e.clientY)) return;
+  const previousDepth=S.deff;
+  const p=loc(e);
+  feedPoint(p.x,p.y,true,(Number.isFinite(e.timeStamp) ? e.timeStamp/1000 : nowSec()),previousDepth);
+}
+paperCv.addEventListener('pointermove',e=>{
+  if(down && e.pointerId !== activePointerId) return;
+  const p=loc(e);
+  if(!down && !S.drawing){ S.x=S.px=p.x; S.y=S.py=p.y; return; }
+  if(!down) return;
+  let list=null;
+  if(typeof e.getCoalescedEvents === 'function'){
+    try{ const c=e.getCoalescedEvents(); if(c && c.length) list=c; }catch(err){}
+  }
+  if(S._ptr === 'pen'){
+    const samples=[];
+    for(const sample of list||[]){
+      const q=makePenSample(sample,e);
+      if(q) samples.push(q); else S._penInputStats.foreign++;
+    }
+    const main=makePenSample(e);
+    if(main) samples.push(main);
+    samples.sort((a,b)=>a.time-b.time);
+    for(const q of samples) acceptPenSample(q);
+  } else if(list){
+    for(const sample of list) feedPointerSample(sample);
+    const tail=list[list.length-1];
+    if(tail.timeStamp!==e.timeStamp || tail.clientX!==e.clientX || tail.clientY!==e.clientY) feedPointerSample(e);
+  } else feedPointerSample(e);
+});
+function up(cancelled,e){
+  if(!down) return;
+  if(S._ptr === 'pen') finishPenSamples(e,cancelled);
+  activePointerId = null;
+  flushInk(true);            // 抬笔：把延迟队列里剩下的段全部落完，别丢尾巴
+  /* 校准模式：收笔时结算这一笔样本（这会决定是否进入下一笔 / 或请重写） */
+  if(cal.active && cal.rec){
+    if(cancelled){
+      /* 被系统打断（iPad 手掌误触/系统手势会发 pointercancel）→
+         不要拿残缺样本去拟合，直接作废并让他重写这一笔。 */
+      cal.rec = null;
+      calNote('这一笔被系统打断（手掌误触 / 系统手势），请重写「'+STROKES[cal.key].name+'」', true);
+    } else {
+      const r = cal.rec; cal.rec = null;
+      onCalSample(r);
+    }
+  }
+  /* 抬笔即收笔（§5.4 补全）：笔画已成形 → 先出锋再离纸，末端才是「锋」不是齐头。
+     委托给出锋完成分支统一 endStroke —— 这里必须保持 drawing=true，
+     否则 loop 不再落墨，尾巴会没墨。 */
+  /* 压感笔快提补锥（OUHD-L 真人回放实测 2026-10-21）：真人出锋的压力衰减 ≈30ms，
+     跑不赢 D 的 18ms 滞后 —— 抬笔瞬间宽度还剩 30~50% 体宽，尾巴齐头截断。
+     旧假设「压感笔 pressure=0 可直接表达离纸」只对慢提成立（慢提时 D 已贴住目标）。
+     只对「滞后没跑完」的快提补一段出锋把剩余宽度收完；回锋钝收不补。 */
+  const penLiftLag = (S.penPress && S._penSeen) && (S._penDtop || 0) > 0 &&
+      ((S.D || 0) - (S._penTargetD || 0)) > 0.12*S._penDtop;
+  if(S.drawing && S.autoLift && !demo && !cal.active
+     && S.strokeLen >= 0.05*W && !S.flick && !S.huiFeng
+     && (!(S.penPress && S._penSeen) || penLiftLag)){   // 回锋收笔 → 不甩锋尾
+    const fs = flickSpec();
+    /* 出锋宽度必须从「当前锥尖宽度」接续 —— 漏了这行，释锋会以接近全宽开头，
+       在锥尖下方鼓出一个孤立小墨点（渲染放大图里一眼就看到了）。 */
+    S.tailCarry = (S.taperNow === undefined ? 1 : S.taperNow);
+    S.flick = { t:0, dur:fs.dur, fade:fs.fade, len:fs.len, x0:S.x, y0:S.y, ux:S.ux, uy:S.uy };
+    down=false; S.idleT=0;
+    return;
+  }
+  down=false; S.flick=null; S.flickFade=1;
+  if(usesPenPressure()){ S.D=0; S.deff=0; S._penTargetD=0; S._penContour=null; S._penDepthAt=undefined; S._penTime=undefined; setSlider('s-d',0); }
+  /* 只有笔画还开着才结算 —— 自动收锋已经在出锋结束时 endStroke 过一次了，
+     这里再无条件调用会把同一笔在「逐笔记录」里记两遍。 */
+  if(S.drawing){ S.drawing=false; S.liftT=LIFT; endStroke(); }
+}
+paperCv.addEventListener('pointerup',e=>{ if(e.pointerId === activePointerId) up(false,e); });   // 必须包一层：直接传 up 会把事件对象当成 cancelled
+paperCv.addEventListener('pointercancel',e=>{ if(e.pointerId === activePointerId) up(true,e); });
+/* 不再用 pointerleave 结算：平板上手写时轻微移出画布就会断笔；
+   既然 setPointerCapture 已生效，pointerup/pointercancel 一定会到。 */
+
+/* =========================================================
+   14. 启动
+   ========================================================= */
+resize();
+window.addEventListener('resize',resize);
+renderStats(); renderCompare(); renderLayers();
+requestAnimationFrame(function(t){ last=t; loop(t); });
+
+/* 调试句柄：控制台可查看内部状态，便于标定参数。
+   把 §7 校准相关对象也挂出来 —— 无头回归要靠它们端到端模拟一次校准流程。 */
+window.__wb = {
+  S:S, B:B, mats:MATS, papers:PAPERS, get demo(){ return demo; }, stampInk:stampInk,
+  cal:cal, STROKES:STROKES, CAL_ORDER:CAL_ORDER, updateTaper:updateTaper,
+  calBegin:calBegin, calClear:calClear, calFit:calFit, calResample:calResample,
+  pxX:pxX, pxY:pxY, get W(){ return W; }, get H(){ return H; }
+};
+})();
+</script>
+</body>
+</html>

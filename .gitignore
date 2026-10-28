@@ -1,0 +1,20 @@
+# 构建产物 / 编辑器临时文件
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 大体积中间产物（本仓库不发布原始数据集与逐笔渲染 dump）
+*.npy
+_output/
